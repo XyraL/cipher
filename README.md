@@ -83,6 +83,14 @@ apps (Dark Web Market, Contracts Board, etc.) by registering them in
   treasury, activity log. The activity log now also covers tasks
   started/completed, drug sales, dealer calls/purchases, and crafting — not
   just membership/bank/placement events.
+- Blackmarket app: a second app in the device, open to anyone holding the
+  tablet (gang or not). Every character gets a persistent, anonymous handle
+  (e.g. `ShadowFox-A1B2`) the first time they post — never tied to gang
+  label, so even gang affiliation stays hidden. A shared world feed
+  (`Config.Chat.worldHistoryLimit` messages kept) plus DMs addressed by
+  handle, since that's the only identity anyone has; the server is the only
+  thing that ever maps a handle back to a citizenid. Live-delivered if
+  you're online, persisted either way.
 
 ## Admin tablet
 Staff manage gangs in-game instead of editing config.lua/the DB by hand:

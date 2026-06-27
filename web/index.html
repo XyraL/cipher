@@ -167,6 +167,53 @@
                         <div id="logList" class="log-list"></div>
                     </div>
                 </section>
+
+                <!-- BLACKMARKET -->
+                <section id="viewBlackmarket" class="view hidden">
+                    <div class="row-between">
+                        <h2>Blackmarket</h2>
+                        <div class="handle-edit">
+                            <span class="muted">Your handle:</span>
+                            <span id="myHandle" class="handle-chip">—</span>
+                            <button id="editHandleBtn" class="icon-btn" title="Change handle">✎</button>
+                        </div>
+                    </div>
+                    <div id="handleEditRow" class="admin-form hidden">
+                        <input id="handleInput" type="text" maxlength="24" placeholder="new handle (3-24 chars, letters/numbers/-/_)" />
+                        <button id="saveHandleBtn" class="btn btn-ghost">Save</button>
+                        <button id="cancelHandleBtn" class="btn btn-ghost">Cancel</button>
+                    </div>
+                    <nav class="tabs">
+                        <button class="tab is-active" data-tab="world">World</button>
+                        <button class="tab" data-tab="dms">Direct Messages</button>
+                    </nav>
+
+                    <!-- WORLD FEED -->
+                    <div class="tabview is-active" data-tabview="world">
+                        <div id="worldFeed" class="chat-feed"></div>
+                        <div class="chat-composer">
+                            <input id="worldInput" type="text" maxlength="280" placeholder="Post to the feed..." />
+                            <button id="worldSendBtn" class="btn btn-accent">Send</button>
+                        </div>
+                    </div>
+
+                    <!-- DMS -->
+                    <div class="tabview" data-tabview="dms">
+                        <div id="dmThreadList" class="member-list"></div>
+                        <div id="dmConversation" class="hidden">
+                            <button id="dmBackBtn" class="btn btn-ghost dm-back">‹ Back</button>
+                            <div id="dmFeed" class="chat-feed"></div>
+                            <div class="chat-composer">
+                                <input id="dmInput" type="text" maxlength="280" placeholder="Reply..." />
+                                <button id="dmSendBtn" class="btn btn-accent">Send</button>
+                            </div>
+                        </div>
+                        <div class="admin-form dm-new">
+                            <input id="dmNewHandle" type="text" placeholder="handle (e.g. ShadowFox-A1B2)" />
+                            <button id="dmNewBtn" class="btn btn-ghost">Message</button>
+                        </div>
+                    </div>
+                </section>
             </main>
             <div id="toastStack" class="toast-stack"></div>
         </div>

@@ -6,7 +6,7 @@ const RES = 'cipher';
 const $ = (s) => document.querySelector(s);
 const el = (s) => document.querySelectorAll(s);
 
-let state = { snapshot: null };
+let state = { snapshot: null, apps: [], activeApp: null };
 
 // POST to a registered NUI callback.
 async function nui(cb, body = {}) {
@@ -31,6 +31,8 @@ window.addEventListener('message', (ev) => {
     if (action === 'open') openUI(data);
     else if (action === 'close') closeUI();
     else if (action === 'openAdmin' && window.openAdminUI) window.openAdminUI();
+    else if (action === 'chatWorldMessage') onWorldMessage(data);
+    else if (action === 'chatDM') onDMReceived(data);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -44,7 +46,7 @@ function openUI(snapshot) {
     $('#root').classList.remove('hidden');
     renderApps(snapshot.apps || []);
     tickClock();
-    render();
+    switchApp(state.activeApp || (state.apps[0] && state.apps[0].id));
 }
 
 function closeUI() {
@@ -68,18 +70,34 @@ function tickClock() {
 
 // ── app rail ──
 function renderApps(apps) {
+    state.apps = apps;
     const rail = $('#appRail');
     rail.innerHTML = '';
-    apps.forEach((app, i) => {
+    apps.forEach((app) => {
         const b = document.createElement('button');
-        b.className = 'app-btn' + (i === 0 ? ' is-active' : '');
+        b.className = 'app-btn' + (app.id === state.activeApp ? ' is-active' : '');
         b.textContent = app.label.slice(0, 2).toUpperCase();
         b.title = app.label;
-        rail.appendChild(b); // single app for now; routing hook for future apps
+        b.onclick = () => switchApp(app.id);
+        rail.appendChild(b);
     });
 }
 
-// ── main render ──
+// ── app routing ──
+function switchApp(appId) {
+    state.activeApp = appId;
+    el('.app-btn').forEach((b, i) => b.classList.toggle('is-active', state.apps[i] && state.apps[i].id === appId));
+    el('.view').forEach((v) => v.classList.add('hidden'));
+
+    if (appId === 'blackmarket') {
+        showView('viewBlackmarket');
+        renderBlackmarket();
+    } else {
+        render(); // gangops decides viewFound vs viewGang itself
+    }
+}
+
+// ── main render (Gang Ops) ──
 function render() {
     const g = state.snapshot.gang;
     if (!g) {
@@ -363,13 +381,14 @@ $('#callDealerBtn').onclick = async () => {
     await renderDealer();
 };
 
-// ── tabs ──
+// ── tabs ── (scoped to the enclosing .view so two apps' tabs never collide)
 el('.tab').forEach((tab) => {
     tab.onclick = () => {
-        el('.tab').forEach((t) => t.classList.remove('is-active'));
-        el('.tabview').forEach((v) => v.classList.remove('is-active'));
+        const scope = tab.closest('.view') || document;
+        scope.querySelectorAll('.tab').forEach((t) => t.classList.remove('is-active'));
+        scope.querySelectorAll('.tabview').forEach((v) => v.classList.remove('is-active'));
         tab.classList.add('is-active');
-        $(`[data-tabview="${tab.dataset.tab}"]`).classList.add('is-active');
+        scope.querySelector(`[data-tabview="${tab.dataset.tab}"]`).classList.add('is-active');
     };
 });
 
@@ -398,6 +417,139 @@ function formatTime(ts) {
     const d = new Date(ts.replace ? ts.replace(' ', 'T') : ts);
     if (isNaN(d)) return '';
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// ── Blackmarket ──
+let blackmarketLoaded = false;
+let dmActiveHandle = null;
+
+async function renderBlackmarket() {
+    if (!blackmarketLoaded) {
+        blackmarketLoaded = true;
+        const handle = await call('cipher:chat:getMyHandle');
+        $('#myHandle').textContent = handle || '—';
+    }
+    await renderWorldFeed();
+    await renderDMThreads();
+}
+
+$('#editHandleBtn').onclick = () => {
+    $('#handleInput').value = $('#myHandle').textContent;
+    $('#handleEditRow').classList.remove('hidden');
+};
+$('#cancelHandleBtn').onclick = () => $('#handleEditRow').classList.add('hidden');
+$('#saveHandleBtn').onclick = async () => {
+    const desired = $('#handleInput').value.trim();
+    if (!desired) return;
+    const res = await call('cipher:chat:setHandle', desired);
+    if (res.ok) {
+        $('#myHandle').textContent = res.handle;
+        $('#handleEditRow').classList.add('hidden');
+        flash('Handle updated', 'success');
+    } else {
+        flash(res.error || 'Failed to update handle', 'error');
+    }
+};
+$('#handleInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#saveHandleBtn').click(); });
+
+function appendChatBubble(container, handle, message, mine) {
+    const row = document.createElement('div');
+    row.className = 'chat-bubble' + (mine ? ' mine' : '');
+    row.innerHTML = `<span class="chat-handle">${escapeHtml(handle)}</span><span class="chat-text">${escapeHtml(message)}</span>`;
+    container.appendChild(row);
+    container.scrollTop = container.scrollHeight;
+}
+
+async function renderWorldFeed() {
+    const history = await call('cipher:chat:getWorldHistory');
+    const feed = $('#worldFeed');
+    feed.innerHTML = '';
+    const myHandle = $('#myHandle').textContent;
+    (history || []).forEach((m) => appendChatBubble(feed, m.handle, m.message, m.handle === myHandle));
+    if (!history || !history.length) feed.innerHTML = '<div class="log-empty">No chatter yet.</div>';
+}
+
+function onWorldMessage(m) {
+    if (state.activeApp !== 'blackmarket') return;
+    const myHandle = $('#myHandle').textContent;
+    appendChatBubble($('#worldFeed'), m.handle, m.message, m.handle === myHandle);
+}
+
+$('#worldSendBtn').onclick = async () => {
+    const input = $('#worldInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    const res = await call('cipher:chat:postWorld', msg);
+    if (!res.ok) flash(res.error || 'Failed to post', 'error');
+};
+$('#worldInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#worldSendBtn').click(); });
+
+async function renderDMThreads() {
+    const threads = await call('cipher:chat:getThreads');
+    const list = $('#dmThreadList');
+    list.innerHTML = '';
+    if (!threads || !threads.length) {
+        list.innerHTML = '<div class="log-empty">No conversations yet.</div>';
+    } else {
+        threads.forEach((t) => {
+            const row = document.createElement('div');
+            row.className = 'member';
+            row.innerHTML = `
+                <span class="member-name">${escapeHtml(t.handle)}${t.unread ? ' <span class="unread-dot"></span>' : ''}</span>
+                <span class="member-rank">${escapeHtml((t.lastMessage || '').slice(0, 40))}</span>`;
+            row.onclick = () => openDMThread(t.handle);
+            list.appendChild(row);
+        });
+    }
+    $('#dmConversation').classList.add('hidden');
+    list.classList.remove('hidden');
+}
+
+async function openDMThread(handle) {
+    dmActiveHandle = handle;
+    $('#dmThreadList').classList.add('hidden');
+    $('#dmConversation').classList.remove('hidden');
+    const feed = $('#dmFeed');
+    feed.innerHTML = '';
+    const myHandle = $('#myHandle').textContent;
+    const messages = await call('cipher:chat:getThread', handle);
+    (messages || []).forEach((m) => appendChatBubble(feed, m.from_handle, m.message, m.from_handle === myHandle));
+    if (!messages || !messages.length) feed.innerHTML = '<div class="log-empty">No messages yet — say hi.</div>';
+}
+
+$('#dmBackBtn').onclick = () => { dmActiveHandle = null; renderDMThreads(); };
+
+$('#dmSendBtn').onclick = async () => {
+    if (!dmActiveHandle) return;
+    const input = $('#dmInput');
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    const res = await call('cipher:chat:sendDM', dmActiveHandle, msg);
+    if (res.ok) {
+        const myHandle = $('#myHandle').textContent;
+        appendChatBubble($('#dmFeed'), myHandle, msg, true);
+    } else {
+        flash(res.error || 'Failed to send', 'error');
+    }
+};
+$('#dmInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#dmSendBtn').click(); });
+
+$('#dmNewBtn').onclick = () => {
+    const handle = $('#dmNewHandle').value.trim();
+    if (!handle) return;
+    $('#dmNewHandle').value = '';
+    openDMThread(handle);
+};
+
+function onDMReceived(m) {
+    if (state.activeApp === 'blackmarket' && dmActiveHandle === m.handle) {
+        appendChatBubble($('#dmFeed'), m.handle, m.message, false);
+    } else {
+        flash(`New message from ${m.handle}`, 'info');
+    }
+    if (state.activeApp === 'blackmarket' && !dmActiveHandle) renderDMThreads();
 }
 
 // dev preview outside FiveM

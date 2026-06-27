@@ -48,6 +48,7 @@ server_scripts {
     'server/crafting.lua',
     'server/dealer.lua',
     'server/drugs.lua',
+    'server/chat.lua',
 }
 
 ui_page 'web/index.html'

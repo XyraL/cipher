@@ -60,7 +60,24 @@ local allowed = {
     ['cipher:placeables:remove']       = true,
     ['cipher:dealer:getStatus']        = true,
     ['cipher:dealer:contact']          = true,
+    ['cipher:chat:getMyHandle']        = true,
+    ['cipher:chat:setHandle']          = true,
+    ['cipher:chat:getWorldHistory']    = true,
+    ['cipher:chat:postWorld']          = true,
+    ['cipher:chat:getThreads']         = true,
+    ['cipher:chat:getThread']          = true,
+    ['cipher:chat:sendDM']             = true,
 }
+
+-- Live chat pushes (not request/response, so they bypass the relay above
+-- and go straight to the NUI as their own message actions).
+RegisterNetEvent('cipher:client:chatWorldMessage', function(data)
+    SendNUIMessage({ action = 'chatWorldMessage', data = data })
+end)
+
+RegisterNetEvent('cipher:client:chatDM', function(data)
+    SendNUIMessage({ action = 'chatDM', data = data })
+end)
 
 RegisterNUICallback('call', function(payload, cb)
     local name = payload.name

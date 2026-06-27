@@ -12,6 +12,29 @@ Config.DeviceItem = 'cipher_tablet'
 Config.OpenCommand = 'gangops'
 
 -- ─────────────────────────────────────────────────────────────
+-- Blackmarket chat
+-- Anonymous codename per character (e.g. "ShadowFox-A1B2"), generated once
+-- and persisted — never tied to gang label, so even gang affiliation stays
+-- hidden. Open to anyone holding the tablet, gang or not: world chat is a
+-- shared trading-floor feed, DMs are addressed by handle (never citizenid)
+-- since that's the only identity anyone has.
+-- ─────────────────────────────────────────────────────────────
+Config.Chat = {
+    enabled = true,
+    worldHistoryLimit = 100,    -- messages kept/shown in the world feed
+    dmHistoryLimit = 100,       -- messages kept/shown per DM thread
+    maxMessageLength = 280,
+    handleAdjectives = {
+        'Shadow', 'Silent', 'Crimson', 'Iron', 'Ghost', 'Night', 'Static',
+        'Hollow', 'Rusty', 'Velvet', 'Phantom', 'Cold',
+    },
+    handleNouns = {
+        'Fox', 'Viper', 'Crow', 'Wolf', 'Raven', 'Hound', 'Cobra', 'Hawk',
+        'Jackal', 'Lynx', 'Reaper', 'Wraith',
+    },
+}
+
+-- ─────────────────────────────────────────────────────────────
 -- Discord webhooks
 -- Three separate channels by audience — leave any blank to disable it.
 --   admin:    every action taken through /admintablet (the audit trail)

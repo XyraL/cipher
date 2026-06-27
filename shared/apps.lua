@@ -39,3 +39,12 @@ Cipher.RegisterApp({
     order = 10,
     enabled = true,
 })
+
+-- Second app: Blackmarket — anonymous world chat + handle-addressed DMs.
+Cipher.RegisterApp({
+    id = 'blackmarket',
+    label = 'Blackmarket',
+    icon = 'comments',
+    order = 20,
+    enabled = Config.Chat.enabled,
+})

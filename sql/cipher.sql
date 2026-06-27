@@ -99,6 +99,39 @@ CREATE TABLE IF NOT EXISTS `cipher_gang_logs` (
         REFERENCES `cipher_gangs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Blackmarket chat: anonymous codename per character, a capped world feed,
+-- and DMs addressed by handle (never by citizenid) so identity never
+-- leaks through the chat UI itself.
+CREATE TABLE IF NOT EXISTS `cipher_chat_handles` (
+    `citizenid`     VARCHAR(64)     NOT NULL,
+    `handle`        VARCHAR(32)     NOT NULL,
+    `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`citizenid`),
+    UNIQUE KEY `uniq_handle` (`handle`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cipher_chat_world` (
+    `id`            INT             NOT NULL AUTO_INCREMENT,
+    `handle`        VARCHAR(32)     NOT NULL,
+    `message`       VARCHAR(280)    NOT NULL,
+    `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `cipher_chat_dms` (
+    `id`            INT             NOT NULL AUTO_INCREMENT,
+    `from_citizenid` VARCHAR(64)    NOT NULL,
+    `to_citizenid`  VARCHAR(64)     NOT NULL,
+    `from_handle`   VARCHAR(32)     NOT NULL,
+    `to_handle`     VARCHAR(32)     NOT NULL,
+    `message`       VARCHAR(280)    NOT NULL,
+    `read_at`       BIGINT          NOT NULL DEFAULT 0,
+    `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_from` (`from_citizenid`),
+    KEY `idx_to` (`to_citizenid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Safe to re-run on a DB that already has these tables from an earlier
 -- version of this file (MySQL 8 / MariaDB 10.0+ required for IF NOT EXISTS).
 ALTER TABLE `cipher_gang_members` ADD COLUMN IF NOT EXISTS `rep` INT NOT NULL DEFAULT 0;
