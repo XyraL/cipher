@@ -12,6 +12,24 @@ Config.DeviceItem = 'cipher_tablet'
 Config.OpenCommand = 'gangops'
 
 -- ─────────────────────────────────────────────────────────────
+-- Discord webhooks
+-- Three separate channels by audience — leave any blank to disable it.
+--   admin:    every action taken through /admintablet (the audit trail)
+--   gang:     structural lifecycle — founded, disbanded, boss changed
+--   economy:  player-driven money movement — deposits, withdrawals,
+--             dues charged, dealer purchases (NOT admin overrides,
+--             those already show in the admin log)
+-- Get a webhook URL from a Discord channel: Edit Channel > Integrations
+-- > Webhooks > New Webhook > Copy URL.
+-- ─────────────────────────────────────────────────────────────
+Config.Discord = {
+    adminWebhook = '',
+    gangWebhook = '',
+    economyWebhook = '',
+    botName = 'Cipher',
+}
+
+-- ─────────────────────────────────────────────────────────────
 -- Admin tablet
 -- A separate NUI view for staff: gang CRUD, rep/notoriety/bank/dues
 -- overrides, territory reassignment. No physical item — just a command,

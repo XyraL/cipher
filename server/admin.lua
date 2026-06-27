@@ -19,6 +19,13 @@ local function guarded(handler)
     end
 end
 
+-- Every successful admin-tablet action gets logged here — the audit trail.
+local function logAdmin(src, title, description, color)
+    Discord.Send('admin', title, description, color, {
+        { name = 'Admin', value = Framework.GetName(src) or tostring(src), inline = true },
+    })
+end
+
 -- ── reads ───────────────────────────────────────────────────
 function Admin.ListGangs()
     local rows = MySQL.query.await('SELECT id, name, label, owner, notoriety, bank, dues_amount FROM cipher_gangs ORDER BY label') or {}
@@ -234,71 +241,99 @@ end))
 
 lib.callback.register('cipher:admin:kickMember', guarded(function(src, gangId, citizenid)
     local ok, err = Admin.KickMember(tonumber(gangId), citizenid)
+    if ok then logAdmin(src, 'Member kicked', ('Gang #%d — %s'):format(gangId, citizenid), Discord.Color.bad) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:setMemberGrade', guarded(function(src, gangId, citizenid, grade)
     local ok, err = Admin.SetMemberGrade(tonumber(gangId), citizenid, tonumber(grade))
+    if ok then logAdmin(src, 'Member grade set', ('Gang #%d — %s → grade %s'):format(gangId, citizenid, grade), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:createGang', guarded(function(src, name, label, boss)
     local ok, res = Admin.CreateGang(name, label, boss)
+    if ok then
+        logAdmin(src, 'Gang created', ('%s (#%d), boss: %s'):format(label or name, res, boss or '—'), Discord.Color.good)
+        Discord.Send('gang', 'Gang founded', ('%s (#%d)'):format(label or name, res), Discord.Color.good)
+    end
     return { ok = ok, error = not ok and res or nil, gangId = ok and res or nil }
 end))
 
 lib.callback.register('cipher:admin:updateGang', guarded(function(src, gangId, fields)
     local ok, err = Admin.UpdateGang(tonumber(gangId), fields or {})
+    if ok then
+        if fields.label then logAdmin(src, 'Gang renamed', ('Gang #%d → %s'):format(gangId, fields.label), Discord.Color.info) end
+        if fields.boss then
+            logAdmin(src, 'Boss changed', ('Gang #%d → %s'):format(gangId, fields.boss), Discord.Color.warn)
+            Discord.Send('gang', 'Boss changed', ('Gang #%d → %s'):format(gangId, fields.boss), Discord.Color.warn)
+        end
+    end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:disbandGang', guarded(function(src, gangId)
+    local gang = Gangs.Get(tonumber(gangId))
+    local label = gang and gang.label or ('#' .. tostring(gangId))
     local ok, err = Admin.DisbandGang(tonumber(gangId))
+    if ok then
+        logAdmin(src, 'Gang disbanded', label, Discord.Color.bad)
+        Discord.Send('gang', 'Gang disbanded', label, Discord.Color.bad)
+    end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:adjustRep', guarded(function(src, citizenid, amount)
     local ok, err = Admin.AdjustMemberRep(citizenid, tonumber(amount) or 0)
+    if ok then logAdmin(src, 'Member rep adjusted', ('%s — %+d rep'):format(citizenid, tonumber(amount) or 0), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:adjustNotoriety', guarded(function(src, gangId, amount)
     local ok, err = Admin.AdjustNotoriety(tonumber(gangId), tonumber(amount) or 0)
+    if ok then logAdmin(src, 'Gang notoriety adjusted', ('Gang #%d — %+d rep'):format(gangId, tonumber(amount) or 0), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:setBank', guarded(function(src, gangId, amount)
     local ok, err = Admin.SetBank(tonumber(gangId), amount)
+    if ok then logAdmin(src, 'Gang bank set', ('Gang #%d → $%d'):format(gangId, tonumber(amount) or 0), Discord.Color.warn) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:setDues', guarded(function(src, gangId, amount)
     local ok, err = Admin.SetDues(tonumber(gangId), amount)
+    if ok then logAdmin(src, 'Gang dues set', ('Gang #%d → $%d'):format(gangId, tonumber(amount) or 0), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:setTerritory', guarded(function(src, zone, gangId)
     local ok, err = Admin.SetTerritoryHolder(zone, gangId and tonumber(gangId) or nil)
+    if ok then logAdmin(src, 'Zone holder set', ('%s → %s'):format(zone, gangId or 'unassigned'), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:createZone', guarded(function(src, zone, label, color)
     local ok, res = Admin.CreateZone(zone, label, color)
+    if ok then logAdmin(src, 'Zone created', ('%s (%s)'):format(label or zone, res), Discord.Color.good) end
     return { ok = ok, error = not ok and res or nil, zone = ok and res or nil }
 end))
 
 lib.callback.register('cipher:admin:setZoneCoords', guarded(function(src, zone)
     local ok, err = Admin.SetZoneCoordsToSrc(src, zone)
+    if ok then logAdmin(src, 'Zone moved', zone, Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:updateZone', guarded(function(src, zone, fields)
     local ok, err = Admin.UpdateZone(zone, fields or {})
+    if ok then logAdmin(src, 'Zone updated', ('%s — %s'):format(zone, json.encode(fields or {})), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 
 lib.callback.register('cipher:admin:deleteZone', guarded(function(src, zone)
     local ok, err = Admin.DeleteZone(zone)
+    if ok then logAdmin(src, 'Zone deleted', zone, Discord.Color.bad) end
     return { ok = ok, error = err }
 end))
 

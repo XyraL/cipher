@@ -55,6 +55,7 @@ function Dealer.Buy(src, item)
     if gang then
         Gangs.Log(gang.id, ('%s bought %s from the dealer for $%d'):format(Framework.GetName(src) or cid, entry.label, entry.price))
     end
+    Discord.Send('economy', 'Dealer purchase', ('%s bought %s for $%d'):format(Framework.GetName(src) or cid or src, entry.label, entry.price), Discord.Color.good)
 
     return true, entry.price
 end

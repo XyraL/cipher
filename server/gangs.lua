@@ -109,6 +109,7 @@ function Gangs.SyncFromConfig()
                     { gangId, grade, rank.name, jsonPerms(rank.permissions) })
             end
             if Config.Debug then print(('^2[cipher]^0 seeded gang "%s" (#%d) from config'):format(name, gangId)) end
+            Discord.Send('gang', 'Gang founded', ('%s (#%d) — seeded from config.lua'):format(def.label or name, gangId), Discord.Color.good)
         else
             gangId = row.id
             MySQL.update('UPDATE cipher_gangs SET label = ?, owner = ? WHERE id = ?',

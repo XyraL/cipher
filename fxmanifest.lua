@@ -35,6 +35,7 @@ client_scripts {
 server_scripts {
     '@oxmysql/lib/MySQL.lua',
     'bridge/framework.lua',
+    'server/discord.lua',
     'server/main.lua',
     'server/gangs.lua',
     'server/territory.lua',

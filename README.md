@@ -98,6 +98,17 @@ Staff manage gangs in-game instead of editing config.lua/the DB by hand:
 - Everything here writes straight to the database — `Config.Gangs` is only
   used to seed gangs on first boot, not as an ongoing source of truth.
 
+## Discord logging
+Optional — set any of `Config.Discord.adminWebhook` / `gangWebhook` / `economyWebhook`
+to a Discord webhook URL to get live embeds for:
+- **admin**: every action taken through `/admintablet` (the audit trail)
+- **gang**: founded / disbanded / boss changed
+- **economy**: deposits, withdrawals, dues charged, dealer purchases
+
+Leave any of them blank to disable that category — nothing is required. Get a
+webhook URL from Discord: channel settings → Integrations → Webhooks → New
+Webhook → Copy URL.
+
 ## Debugging
 - `/testmodel <name> [ped]` (admin-only) — checks `IsModelValid` and spawns the
   model in front of you for 6s. Use this before adding any model name to

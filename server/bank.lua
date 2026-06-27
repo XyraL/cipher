@@ -16,6 +16,7 @@ function Bank.Deposit(src, amount)
     gang.bank = gang.bank + amount
     MySQL.update('UPDATE cipher_gangs SET bank = bank + ? WHERE id = ?', { amount, gang.id })
     Gangs.Log(gang.id, ('%s deposited $%d'):format(Framework.GetName(src), amount))
+    Discord.Send('economy', 'Deposit', ('%s deposited $%d into %s'):format(Framework.GetName(src), amount, gang.label), Discord.Color.good)
     return true, gang.bank
 end
 
@@ -31,6 +32,7 @@ function Bank.Withdraw(src, amount)
     MySQL.update('UPDATE cipher_gangs SET bank = bank - ? WHERE id = ?', { amount, gang.id })
     Framework.AddMoney(src, Config.Dues.account, amount, 'gang-withdraw')
     Gangs.Log(gang.id, ('%s withdrew $%d'):format(Framework.GetName(src), amount))
+    Discord.Send('economy', 'Withdrawal', ('%s withdrew $%d from %s'):format(Framework.GetName(src), amount, gang.label), Discord.Color.warn)
     return true, gang.bank
 end
 
@@ -56,6 +58,7 @@ local function chargeDues(src, cid, gang, amount)
     MySQL.update('UPDATE cipher_gangs SET bank = bank + ? WHERE id = ?', { amount, gang.id })
     MySQL.update('UPDATE cipher_gang_members SET dues_paid_at = ? WHERE citizenid = ?', { os.time() * 1000, cid })
     if gang.members[cid] then gang.members[cid].dues_paid_at = os.time() * 1000 end
+    Discord.Send('economy', 'Dues charged', ('%s — $%d from %s'):format(gang.label, amount, gang.members[cid] and gang.members[cid].name or cid), Discord.Color.info)
     return true
 end
 
