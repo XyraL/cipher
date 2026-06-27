@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="style.css" />
+    <title>cipher</title>
+</head>
+<body>
+    <div id="root" class="hidden">
+        <div class="device">
+            <!-- App rail: makes the "device hosting apps" concept visible -->
+            <aside class="rail">
+                <div class="rail-logo">C</div>
+                <nav id="appRail" class="rail-apps"></nav>
+                <button id="powerBtn" class="rail-power" title="Close">⏻</button>
+            </aside>
+
+            <!-- App surface -->
+            <main class="surface">
+                <header class="statusbar">
+                    <div class="status-left">
+                        <span id="gangName" class="gang-name">No affiliation</span>
+                        <span id="gangTier" class="tier-chip">—</span>
+                    </div>
+                    <div class="status-right">
+                        <span class="signal">SECURE LINK</span>
+                        <span id="clock" class="clock">--:--</span>
+                    </div>
+                </header>
+
+                <!-- NO GANG: admin-defined gangs only, nothing to do here -->
+                <section id="viewFound" class="view hidden">
+                    <div class="found-card">
+                        <h1>No active affiliation</h1>
+                        <p class="muted">Gangs are formed by admins. Apply on Discord to get one set up for your crew.</p>
+                    </div>
+                </section>
+
+                <!-- GANG OPS -->
+                <section id="viewGang" class="view hidden">
+                    <nav class="tabs">
+                        <button class="tab is-active" data-tab="main">Main</button>
+                        <button class="tab" data-tab="roster">Roster</button>
+                        <button class="tab" data-tab="territory">Territory</button>
+                        <button class="tab" data-tab="tasks">Tasks</button>
+                        <button class="tab" data-tab="unlocks">Unlocks</button>
+                        <button class="tab" data-tab="bank">Treasury</button>
+                        <button class="tab" data-tab="activity">Activity</button>
+                    </nav>
+
+                    <!-- MAIN OVERVIEW -->
+                    <div class="tabview is-active" data-tabview="main">
+                        <div class="overview-hero">
+                            <div class="overview-name" id="overviewName">—</div>
+                            <span id="overviewTier" class="tier-chip">—</span>
+                        </div>
+                        <div class="overview-progress">
+                            <div class="overview-progress-track">
+                                <div id="overviewProgressFill" class="overview-progress-fill"></div>
+                            </div>
+                            <span id="overviewProgressLabel" class="overview-progress-label muted">0 / 0 rep</span>
+                        </div>
+                        <div class="overview-grid">
+                            <div class="overview-card">
+                                <span class="muted">Treasury</span>
+                                <div class="overview-stat" id="overviewBank">$0</div>
+                            </div>
+                            <div class="overview-card">
+                                <span class="muted">Notoriety</span>
+                                <div class="overview-stat" id="overviewRep">0</div>
+                            </div>
+                            <div class="overview-card">
+                                <span class="muted">Members</span>
+                                <div class="overview-stat" id="overviewMembers">0</div>
+                            </div>
+                            <div class="overview-card">
+                                <span class="muted">Online</span>
+                                <div class="overview-stat" id="overviewOnline">0</div>
+                            </div>
+                            <div class="overview-card">
+                                <span class="muted">Territories held</span>
+                                <div class="overview-stat" id="overviewTerritories">0</div>
+                            </div>
+                            <div class="overview-card">
+                                <span class="muted">Your rank</span>
+                                <div class="overview-stat" id="overviewMyRank">—</div>
+                            </div>
+                        </div>
+                        <h2 style="margin-top: 22px;">Recent activity</h2>
+                        <div id="overviewLogs" class="log-list"></div>
+                    </div>
+
+                    <!-- ROSTER -->
+                    <div class="tabview" data-tabview="roster">
+                        <div class="row-between">
+                            <h2>Roster <span id="memberCount" class="count">0</span></h2>
+                            <div class="invite-box">
+                                <input id="inviteId" type="number" placeholder="player ID" />
+                                <button id="inviteBtn" class="btn btn-ghost">Invite</button>
+                            </div>
+                        </div>
+                        <div class="muted">Your rep: <span id="myRep">0</span></div>
+                        <div id="memberList" class="member-list"></div>
+                    </div>
+
+                    <!-- TASKS -->
+                    <div class="tabview" data-tabview="tasks">
+                        <div class="row-between">
+                            <h2>Available jobs</h2>
+                            <button id="cancelTaskBtn" class="btn btn-ghost hidden">Cancel active job</button>
+                        </div>
+                        <div id="taskList" class="member-list"></div>
+
+                        <div class="row-between" style="margin-top: 22px;">
+                            <h2>Dealer</h2>
+                        </div>
+                        <div class="member">
+                            <span class="member-name">Call Dealer</span>
+                            <span id="dealerStatus" class="member-rank">—</span>
+                            <div class="member-actions">
+                                <button id="callDealerBtn" class="btn btn-ghost">Call</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TERRITORY (signature element) -->
+                    <div class="tabview" data-tabview="territory">
+                        <h2>Territory control</h2>
+                        <div id="turfGrid" class="turf-grid"></div>
+                    </div>
+
+                    <!-- UNLOCKS -->
+                    <div class="tabview" data-tabview="unlocks">
+                        <h2>Tier unlocks &amp; vault</h2>
+                        <div id="unlockList" class="member-list"></div>
+                    </div>
+
+                    <!-- TREASURY -->
+                    <div class="tabview" data-tabview="bank">
+                        <div class="treasury-head">
+                            <span class="muted">Crew treasury</span>
+                            <div id="bankBalance" class="bank-balance">$0</div>
+                            <div class="treasury-rep">
+                                <span id="treasuryTier" class="tier-chip">—</span>
+                                <span id="treasuryRep" class="muted">0 rep</span>
+                            </div>
+                        </div>
+                        <div class="treasury-actions">
+                            <input id="bankAmount" type="number" placeholder="amount" />
+                            <button id="depositBtn" class="btn btn-ghost">Deposit</button>
+                            <button id="withdrawBtn" class="btn btn-ghost">Withdraw</button>
+                        </div>
+                        <div class="dues-row">
+                            <span class="muted">Weekly dues / member</span>
+                            <div class="dues-set">
+                                <input id="duesAmount" type="number" placeholder="0" />
+                                <button id="setDuesBtn" class="btn btn-ghost">Set</button>
+                            </div>
+                        </div>
+                        <p class="muted">The vault is a physical container — place it from the Unlocks tab, then open it in person.</p>
+                    </div>
+
+                    <!-- ACTIVITY -->
+                    <div class="tabview" data-tabview="activity">
+                        <h2>Activity log</h2>
+                        <div id="logList" class="log-list"></div>
+                    </div>
+                </section>
+            </main>
+            <div id="toastStack" class="toast-stack"></div>
+        </div>
+    </div>
+
+    <div id="adminRoot" class="hidden">
+        <div class="device admin-device">
+            <header class="statusbar">
+                <div class="status-left">
+                    <span class="gang-name">Cipher — Admin Tablet</span>
+                </div>
+                <div class="status-right">
+                    <span class="signal">STAFF ACCESS</span>
+                    <button id="adminCloseBtn" class="rail-power" title="Close">⏻</button>
+                </div>
+            </header>
+
+            <main class="admin-surface">
+                <!-- CREATE -->
+                <section class="admin-card">
+                    <h2>New gang</h2>
+                    <div class="admin-form">
+                        <input id="newGangName" type="text" placeholder="name (e.g. ballas)" />
+                        <input id="newGangLabelAdmin" type="text" placeholder="label (e.g. Ballas)" />
+                        <input id="newGangBoss" type="text" placeholder="boss citizenid" />
+                        <button id="adminCreateBtn" class="btn btn-accent">Create</button>
+                    </div>
+                    <div id="adminCreateError" class="form-error"></div>
+                </section>
+
+                <!-- GANGS -->
+                <section class="admin-card">
+                    <h2>Gangs</h2>
+                    <div id="adminGangList" class="admin-gang-list"></div>
+                </section>
+
+                <!-- TERRITORY -->
+                <section class="admin-card">
+                    <h2>Zones</h2>
+                    <div class="admin-form">
+                        <input id="newZoneKey" type="text" placeholder="zone key (e.g. grove)" />
+                        <input id="newZoneLabel" type="text" placeholder="label (e.g. Grove Street)" />
+                        <button id="adminCreateZoneBtn" class="btn btn-accent">Create at my position</button>
+                    </div>
+                    <div id="adminTerritoryList" class="admin-gang-list"></div>
+                </section>
+            </main>
+            <div id="adminToastStack" class="toast-stack"></div>
+        </div>
+    </div>
+
+    <div id="craftRoot" class="hidden">
+        <div class="craft-frame">
+            <div class="craft-corner tl"></div>
+            <div class="craft-corner tr"></div>
+            <div class="craft-corner bl"></div>
+            <div class="craft-corner br"></div>
+
+            <header class="craft-header">
+                <span class="craft-title" id="craftBenchLabel">WORKBENCH</span>
+                <button id="craftCloseBtn" class="craft-close" title="Close">✕</button>
+            </header>
+
+            <div class="craft-body">
+                <div id="craftRecipeList" class="craft-recipe-list"></div>
+
+                <div class="craft-detail">
+                    <div id="craftEmpty" class="craft-empty">Select a recipe</div>
+                    <div id="craftSelected" class="craft-selected hidden">
+                        <div class="craft-selected-title" id="craftSelTitle">—</div>
+                        <div class="craft-io">
+                            <div class="craft-io-col">
+                                <span class="craft-io-label">Requires</span>
+                                <div id="craftInputs" class="craft-chips"></div>
+                            </div>
+                            <div class="craft-io-arrow">→</div>
+                            <div class="craft-io-col">
+                                <span class="craft-io-label">Produces</span>
+                                <div id="craftOutput" class="craft-chips"></div>
+                            </div>
+                        </div>
+
+                        <button id="craftMakeBtn" class="craft-make-btn">
+                            <svg class="craft-ring" viewBox="0 0 100 100">
+                                <circle class="craft-ring-bg" cx="50" cy="50" r="44"></circle>
+                                <circle id="craftRingFill" class="craft-ring-fill" cx="50" cy="50" r="44"></circle>
+                            </svg>
+                            <span id="craftMakeLabel" class="craft-make-label">CRAFT</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script src="admin.js"></script>
+    <script src="craft.js"></script>
+</body>
+</html>
