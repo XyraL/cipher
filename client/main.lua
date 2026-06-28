@@ -170,6 +170,7 @@ local function spawnKillTarget(spawn, model, weapon, isLeader)
     end
     lib.requestModel(model)
     killPed = CreatePed(4, model, spawn.x, spawn.y, spawn.z, 0.0, true, true)
+    PlaceEntityOnGroundProperly(killPed)
 
     AddRelationshipGroup('cipher_hitcontract')
     local hostileGroup = GetHashKey('cipher_hitcontract')
@@ -254,6 +255,7 @@ local function spawnEscort(spawn, destination, model, radius, isLeader)
     end
     lib.requestModel(model)
     escortPed = CreatePed(4, model, spawn.x, spawn.y, spawn.z, 0.0, true, true)
+    PlaceEntityOnGroundProperly(escortPed)
     SetBlockingOfNonTemporaryEvents(escortPed, true)
     SetPedCanRagdoll(escortPed, true)
 
@@ -418,6 +420,7 @@ local function setupDropoffTarget(coords, model, isLeader, label, action)
     end
     lib.requestModel(model)
     dropoffPed = CreatePed(4, model, coords.x, coords.y, coords.z, 0.0, true, true)
+    PlaceEntityOnGroundProperly(dropoffPed)
     SetEntityInvincible(dropoffPed, true)
     SetBlockingOfNonTemporaryEvents(dropoffPed, true)
     FreezeEntityPosition(dropoffPed, true)

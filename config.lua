@@ -326,11 +326,14 @@ Config.TasksCoop = {
 -- type = 'courier': a full van-delivery loop. A van spawns at `vanSpawn`
 --   with the package already "in the back" (just flavor — there's no
 --   physical item, the carryProp shows once you unload). Drive it to
---   `dropoff`, unload (target prompt, validated by BOTH your position and
+--   `dropoffs`, unload (target prompt, validated by BOTH your position and
 --   the van's actual position — the van isn't just along for the ride),
 --   hand the package to the ped there, then drive the van all the way
---   back to `vanSpawn` to actually finish the job — delivering the
+--   back to its spawn point to actually finish the job — delivering the
 --   package alone doesn't complete it, the van has to come home too.
+--   `vanSpawns` and `dropoffs` are each lists — one of each is picked at
+--   random per job, same pattern as Boosting's vehicle `spawns` lists, so
+--   it's not the same two spots every single time.
 --   `ambushChance` (0-100) is rolled once per job during the drive out —
 --   on a hit you get a heads-up notification a few seconds before hostiles
 --   show up near you, so it never feels like a blindside.
@@ -343,10 +346,19 @@ Config.Tasks = {
         type = 'courier',
         label = 'Package Run',
         minLevel = 1,
-        -- Placeholders — pick your own spots; verify the van model with /testmodel.
+        -- Placeholders — pick your own spots; verify the van model with /testmodel
+        -- and walk/drive every coord yourself before relying on this.
         vanModel = 'speedo',
-        vanSpawn = vec4(-48.4, -1757.6, 29.4, 70.0),
-        dropoff = vec3(1196.5, -1287.6, 35.1),
+        vanSpawns = {
+            vec4(-48.4, -1757.6, 29.4, 70.0),
+            vec4(126.9, -1290.0, 29.2, 160.0),
+            vec4(-336.8, -111.7, 39.0, 250.0),
+        },
+        dropoffs = {
+            vec3(1196.5, -1287.6, 35.1),
+            vec3(-1037.8, -1207.0, 6.5),
+            vec3(841.9, -1782.5, 30.0),
+        },
         radius = 6.0,             -- meters to count as "close enough" (player AND van)
         reward = 35,              -- personal + gang rep on completion
         xp = 25,                  -- personal task-rank XP on completion
@@ -363,8 +375,16 @@ Config.Tasks = {
         label = 'Briefcase Run',
         minLevel = 1,
         vanModel = 'speedo',
-        vanSpawn = vec4(-48.4, -1757.6, 29.4, 70.0),
-        dropoff = vec3(1196.5, -1287.6, 35.1),
+        vanSpawns = {
+            vec4(-48.4, -1757.6, 29.4, 70.0),
+            vec4(126.9, -1290.0, 29.2, 160.0),
+            vec4(-336.8, -111.7, 39.0, 250.0),
+        },
+        dropoffs = {
+            vec3(1196.5, -1287.6, 35.1),
+            vec3(-1037.8, -1207.0, 6.5),
+            vec3(841.9, -1782.5, 30.0),
+        },
         radius = 6.0,
         reward = 50,
         xp = 35,

@@ -25,6 +25,11 @@ local pendingCoopInvites = {} -- [targetSrc] = { fromSrc, fromName }
 
 local function dist(a, b) return #(a - b) end
 
+-- vec4 (has a heading .w) can't be subtracted from the vec3 GetEntityCoords
+-- returns — Lua's vector ops require matching types. Coordinates that may
+-- come in as either (vanSpawn is a vec4 for heading) get flattened here.
+local function asVec3(v) return vec3(v.x, v.y, v.z) end
+
 -- Validates a courier job's van by its actual networked position, not the
 -- player's — mirrors how Boosting validates its drop-off by the vehicle's
 -- position rather than just trusting the player walked up to the right spot.
@@ -32,7 +37,7 @@ local function vanNear(job, coords, radius)
     if not job or not job.vanNetId then return false end
     local veh = NetworkGetEntityFromNetworkId(job.vanNetId)
     if not veh or veh == 0 or not DoesEntityExist(veh) then return false end
-    return dist(GetEntityCoords(veh), coords) <= (radius or 6.0)
+    return dist(GetEntityCoords(veh), asVec3(coords)) <= (radius or 6.0)
 end
 
 local function cleanupVan(src, job)
@@ -262,7 +267,10 @@ function Tasks.CancelCrew(src)
 end
 
 -- ── building the per-stage client payload for a given task def ──
-local function stagePayloadFor(def, stage)
+-- `job` (when given) carries the per-job-resolved courier spawn/dropoff —
+-- one of each is picked at random when the job starts and stays fixed for
+-- its whole lifetime, rather than re-rolling on every stage transition.
+local function stagePayloadFor(def, stage, job)
     if (def.type or 'delivery') == 'kill' then
         return { type = 'kill', stage = 'kill' } -- spawn handled in Accept/AcceptCoop (needs a random point)
     elseif def.type == 'escort' then
@@ -277,13 +285,15 @@ local function stagePayloadFor(def, stage)
             return { type = 'heist', stage = 'escape', point = def.escape, radius = def.radius }
         end
     elseif def.type == 'courier' then
+        local vanSpawn = job and job.vanSpawn
+        local dropoff = job and job.dropoff
         if stage == 'handoff' then
-            return { type = 'courier', stage = 'handoff', dropoff = def.dropoff, carryProp = def.carryProp, dropoffPedModel = def.dropoffPedModel }
+            return { type = 'courier', stage = 'handoff', dropoff = dropoff, carryProp = def.carryProp, dropoffPedModel = def.dropoffPedModel }
         elseif stage == 'return' then
-            return { type = 'courier', stage = 'return', vanSpawn = def.vanSpawn, radius = def.radius }
+            return { type = 'courier', stage = 'return', vanSpawn = vanSpawn, radius = def.radius }
         else
-            return { type = 'courier', stage = 'enroute', vanSpawn = def.vanSpawn, vanModel = def.vanModel,
-                     dropoff = def.dropoff, radius = def.radius, ambushChance = def.ambushChance }
+            return { type = 'courier', stage = 'enroute', vanSpawn = vanSpawn, vanModel = def.vanModel,
+                     dropoff = dropoff, radius = def.radius, ambushChance = def.ambushChance }
         end
     else
         return { type = 'delivery', stage = 'pickup', pickup = def.pickup, dropoff = def.dropoff, carryProp = def.carryProp }
@@ -319,8 +329,11 @@ function Tasks.Accept(src, taskId)
         active[src] = { id = taskId, stage = 'infiltrate', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'infiltrate'))
     elseif def.type == 'courier' then
-        active[src] = { id = taskId, stage = 'enroute', startedAt = os.time() * 1000 }
-        TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'enroute'))
+        local job = { id = taskId, stage = 'enroute', startedAt = os.time() * 1000,
+                      vanSpawn = def.vanSpawns[math.random(#def.vanSpawns)],
+                      dropoff = def.dropoffs[math.random(#def.dropoffs)] }
+        active[src] = job
+        TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'enroute', job))
     else
         active[src] = { id = taskId, stage = 'pickup', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def))
@@ -377,9 +390,11 @@ function Tasks.AcceptCoop(src, taskId)
         end
     elseif def.type == 'courier' then
         job.stage = 'enroute'
+        job.vanSpawn = def.vanSpawns[math.random(#def.vanSpawns)]
+        job.dropoff = def.dropoffs[math.random(#def.dropoffs)]
         for _, m in ipairs(c.members) do
             active[m] = job
-            local payload = stagePayloadFor(def, 'enroute')
+            local payload = stagePayloadFor(def, 'enroute', job)
             payload.isLeader = (m == src)
             TriggerClientEvent('cipher:client:taskUpdate', m, payload)
         end
@@ -611,15 +626,15 @@ function Tasks.DoUnload(src)
     if not def then return false, 'unknown task' end
 
     local ped = GetPlayerPed(src)
-    if ped == 0 or dist(GetEntityCoords(ped), def.dropoff) > (def.radius or 6.0) then
+    if ped == 0 or dist(GetEntityCoords(ped), job.dropoff) > (def.radius or 6.0) then
         return false, 'too far from the dropoff'
     end
-    if not vanNear(job, def.dropoff, def.radius) then
+    if not vanNear(job, job.dropoff, def.radius) then
         return false, 'the van needs to be here too'
     end
 
     job.stage = 'handoff'
-    local payload = stagePayloadFor(def, 'handoff')
+    local payload = stagePayloadFor(def, 'handoff', job)
     payload.id = job.id
     if job.coop then
         for _, m in ipairs(job.crew) do
@@ -643,12 +658,12 @@ function Tasks.DoCourierHandoff(src)
     if not def then return false, 'unknown task' end
 
     local ped = GetPlayerPed(src)
-    if ped == 0 or dist(GetEntityCoords(ped), def.dropoff) > (def.radius or 6.0) then
+    if ped == 0 or dist(GetEntityCoords(ped), job.dropoff) > (def.radius or 6.0) then
         return false, 'too far from the dropoff'
     end
 
     job.stage = 'return'
-    local payload = stagePayloadFor(def, 'return')
+    local payload = stagePayloadFor(def, 'return', job)
     payload.id = job.id
     if job.coop then
         for _, m in ipairs(job.crew) do TriggerClientEvent('cipher:client:taskUpdate', m, payload) end
@@ -666,7 +681,7 @@ function Tasks.DoReturnVan(src)
     local def = byId[job.id]
     if not def then return false, 'unknown task' end
 
-    if not vanNear(job, def.vanSpawn, def.radius) then
+    if not vanNear(job, job.vanSpawn, def.radius) then
         return false, 'the van is not back yet'
     end
 
