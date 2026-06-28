@@ -270,9 +270,42 @@ Config.TierUnlocks = {
 }
 
 -- ─────────────────────────────────────────────────────────────
+-- Task ranks
+-- Personal progression, separate from gang rep — independent of which
+-- gang you're in (or if you leave one), tracked in cipher_task_stats.
+-- `xp` on a task entry below feeds this; `reward` is the gang rep it pays,
+-- a completely separate number. minLevel on a task gates whether it shows
+-- up in your available list at all.
+-- ─────────────────────────────────────────────────────────────
+Config.TaskLevels = {
+    { level = 1, xpNeeded = 0,    title = 'Rookie' },
+    { level = 2, xpNeeded = 150,  title = 'Operative' },
+    { level = 3, xpNeeded = 400,  title = 'Specialist' },
+    { level = 4, xpNeeded = 800,  title = 'Enforcer' },
+    { level = 5, xpNeeded = 1500, title = 'Veteran' },
+}
+
+Config.TaskAchievements = {
+    { id = 'first_job', label = 'First Job', description = 'Complete your first task', type = 'total_completed', value = 1 },
+    { id = 'ten_jobs', label = 'Reliable', description = 'Complete 10 tasks', type = 'total_completed', value = 10 },
+    { id = 'fifty_jobs', label = 'Workhorse', description = 'Complete 50 tasks', type = 'total_completed', value = 50 },
+    { id = 'max_rank', label = 'Top Operative', description = 'Reach the max task rank', type = 'level', value = 5 },
+}
+
+-- Co-op: invite a specific player (same pattern as Boosting's crews) to
+-- tackle a task together. Tasks flagged coopOnly are exclusive to crews —
+-- they never show in the solo list. Reward bonus splits across the crew;
+-- XP is NOT split, every member gets the full amount.
+Config.TasksCoop = {
+    enabled = true,
+    maxCrewSize = 3,
+    rewardBonusPct = 25,
+}
+
+-- ─────────────────────────────────────────────────────────────
 -- Tasks
--- Personal jobs any member can run solo for rep. Add as many as you want
--- here — no other file needs touching.
+-- Personal jobs members run for rep (solo or co-op). Add as many as you
+-- want here — no other file needs touching.
 --
 -- type = 'delivery' (default): target the pickup item (ox_target sphere
 --   zone, or an [E] prompt without ox_target), then target a delivery ped
@@ -284,6 +317,12 @@ Config.TierUnlocks = {
 -- type = 'kill': server picks a random spawnPoints entry, client spawns an
 --   armed hostile NPC there and reports back when it's dead. The server
 --   only trusts that report after minKillSeconds.
+-- type = 'escort': a friendly NPC spawns at `spawn` and follows you to
+--   `destination` — fails if it dies en route. Completes when you (and it)
+--   reach the destination.
+-- type = 'heist': three sequential target points — infiltrate (hold the
+--   interaction for holdSeconds), grab (instant), escape (reach the point
+--   within the task's timeLimitSeconds, counted from when you started).
 -- (Car boosting is NOT a task type — it's a fully separate system with its
 -- own levels/XP/leaderboard, independent of gangs. See Config.Boosting.)
 -- ─────────────────────────────────────────────────────────────
@@ -292,10 +331,12 @@ Config.Tasks = {
         id = 'package_run',
         type = 'delivery',
         label = 'Package Run',
+        minLevel = 1,
         pickup = vec3(-48.4, -1757.6, 29.4),
         dropoff = vec3(1196.5, -1287.6, 35.1),
         radius = 3.0,             -- meters to count as "close enough to target"
         reward = 25,              -- personal + gang rep on completion
+        xp = 15,                  -- personal task-rank XP on completion
         cooldownMinutes = 20,     -- per player, per task
         timeLimitSeconds = 420,   -- fail if not delivered within this window (0 = no limit)
         -- g_m_y_lost_01 confirmed valid via /testmodel — the ped you hand the package to.
@@ -305,10 +346,12 @@ Config.Tasks = {
         id = 'briefcase_run',
         type = 'delivery',
         label = 'Briefcase Run',
+        minLevel = 1,
         pickup = vec3(-48.4, -1757.6, 29.4),
         dropoff = vec3(1196.5, -1287.6, 35.1),
         radius = 3.0,
         reward = 35,
+        xp = 20,
         cooldownMinutes = 25,
         timeLimitSeconds = 420,
         -- prop_box_ammo04a confirmed valid via /testmodel.
@@ -319,6 +362,7 @@ Config.Tasks = {
         id = 'hit_contract',
         type = 'kill',
         label = 'Hit Contract',
+        minLevel = 2,
         -- Placeholders — pick your own spots; these are not verified for
         -- this purpose. The dealer's vec4 list below is separate.
         spawnPoints = {
@@ -329,9 +373,58 @@ Config.Tasks = {
         pedModel = 'g_m_y_lost_01',
         weapon = 'WEAPON_PISTOL',
         reward = 40,
+        xp = 30,
         cooldownMinutes = 30,
         timeLimitSeconds = 600,
         minKillSeconds = 5, -- reject a "target down" report faster than this — clearly not legit
+    },
+    {
+        id = 'vip_escort',
+        type = 'escort',
+        label = 'VIP Escort',
+        minLevel = 2,
+        -- Placeholders — pick your own spots.
+        spawn = vec3(220.0, -800.0, 30.5),
+        destination = vec3(-1100.0, -1500.0, 4.0),
+        radius = 5.0,
+        pedModel = 'g_m_y_lost_01',
+        reward = 45,
+        xp = 35,
+        cooldownMinutes = 30,
+        timeLimitSeconds = 600,
+    },
+    {
+        id = 'safehouse_job',
+        type = 'heist',
+        label = 'Safehouse Job',
+        minLevel = 3,
+        -- Placeholders — pick your own spots.
+        infiltrate = vec3(-200.0, -1300.0, 30.0),
+        grab = vec3(-210.0, -1305.0, 30.0),
+        escape = vec3(-600.0, -1100.0, 25.0),
+        holdSeconds = 6,
+        radius = 2.5,
+        reward = 60,
+        xp = 45,
+        cooldownMinutes = 40,
+        timeLimitSeconds = 480,
+    },
+    {
+        id = 'crew_hit',
+        type = 'kill',
+        label = 'Crew Hit (Co-op only)',
+        minLevel = 1,
+        coopOnly = true, -- never shows in the solo list, only when running a crew job
+        spawnPoints = {
+            vec3(-1037.2, -2737.8, 20.2),
+        },
+        pedModel = 'g_m_y_lost_01',
+        weapon = 'WEAPON_PISTOL',
+        reward = 70,
+        xp = 50,
+        cooldownMinutes = 25,
+        timeLimitSeconds = 600,
+        minKillSeconds = 5,
     },
 }
 

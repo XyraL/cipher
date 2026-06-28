@@ -137,6 +137,8 @@
                             <button class="tab-more-btn" type="button">More <i class="fas fa-chevron-down"></i></button>
                             <div class="tab-more-menu hidden">
                                 <button class="tab" data-tab="tasks">Tasks</button>
+                                <button class="tab" data-tab="task-badges">Task Badges</button>
+                                <button class="tab" data-tab="task-leaderboard">Task Leaderboard</button>
                                 <button class="tab" data-tab="unlocks">Unlocks</button>
                                 <button class="tab" data-tab="bank">Treasury</button>
                                 <button class="tab" data-tab="perks">Perks</button>
@@ -213,11 +215,34 @@
 
                     <!-- TASKS -->
                     <div class="tabview" data-tabview="tasks">
-                        <div class="row-between">
+                        <div class="boost-level-card">
+                            <div class="boost-level-label">
+                                <span id="taskRankNum" class="boost-level-num">1</span>
+                                <span id="taskRankTitle" class="muted">Rookie</span>
+                            </div>
+                            <div class="overview-progress-track">
+                                <div id="taskXpFill" class="overview-progress-fill"></div>
+                            </div>
+                            <span id="taskXpLabel" class="muted">0 XP</span>
+                        </div>
+                        <div class="boost-stats-row">
+                            <div class="boost-stat"><span id="taskTotalCompleted">0</span><span class="muted">Jobs completed</span></div>
+                        </div>
+
+                        <div class="row-between" style="margin-top:18px;">
                             <h2>Available jobs</h2>
                             <button id="cancelTaskBtn" class="btn btn-ghost hidden">Cancel active job</button>
                         </div>
                         <div id="taskList" class="member-list"></div>
+
+                        <h2 class="boost-section-heading">Co-op crew <span class="wanted-flag">HARDER</span></h2>
+                        <div id="taskCrewList" class="member-list"></div>
+                        <div class="admin-form">
+                            <input id="taskInviteId" type="number" placeholder="player ID to invite" />
+                            <button id="taskInviteBtn" class="btn btn-ghost">Invite</button>
+                        </div>
+                        <div id="taskCoopPicker" class="member-list hidden"></div>
+                        <button id="taskCancelCrewBtn" class="btn btn-ghost hidden">Disband crew</button>
 
                         <div class="row-between" style="margin-top: 22px;">
                             <h2>Dealer</h2>
@@ -229,6 +254,18 @@
                                 <button id="callDealerBtn" class="btn btn-ghost">Call</button>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- TASK BADGES -->
+                    <div class="tabview" data-tabview="task-badges">
+                        <h2>Task Badges</h2>
+                        <div id="taskBadgeList" class="member-list"></div>
+                    </div>
+
+                    <!-- TASK LEADERBOARD -->
+                    <div class="tabview" data-tabview="task-leaderboard">
+                        <h2>Top Operatives (your gang)</h2>
+                        <div id="taskLeaderboard" class="member-list"></div>
                     </div>
 
                     <!-- TERRITORY (signature element) -->

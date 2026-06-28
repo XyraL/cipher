@@ -151,6 +151,8 @@ function render() {
     renderBank(g);
     renderLogs(g.logs || []);
     renderTasks();
+    renderTaskBadges();
+    renderTaskLeaderboard();
     renderUnlocks();
     renderDealer();
     renderGangPerks();
@@ -580,14 +582,15 @@ async function renderTaskList(listEl, cancelBtnEl, typeFilter) {
     tasks.forEach((t) => {
         const onCooldown = t.cooldownMs > 0;
         const row = document.createElement('div');
-        row.className = 'member';
+        row.className = 'member' + (t.locked ? ' is-inactive' : '');
         const mins = Math.ceil(t.cooldownMs / 60000);
+        const btnLabel = t.locked ? `Rank ${t.minLevel} required` : (onCooldown ? `Cooldown ${mins}m` : 'Accept');
         row.innerHTML = `
             <span class="member-name">${escapeHtml(t.label)}</span>
             <span class="member-rank">${taskRewardLabel(t)}</span>
             <div class="member-actions">
-                <button class="btn btn-ghost" data-task="${t.id}" ${onCooldown ? 'disabled' : ''}>
-                    ${onCooldown ? `Cooldown ${mins}m` : 'Accept'}
+                <button class="btn btn-ghost" data-task="${t.id}" ${(onCooldown || t.locked) ? 'disabled' : ''}>
+                    ${btnLabel}
                 </button>
             </div>`;
         listEl.appendChild(row);
@@ -604,12 +607,131 @@ async function renderTaskList(listEl, cancelBtnEl, typeFilter) {
 }
 
 async function renderTasks() {
+    const status = await call('cipher:tasks:getStatus');
+    if (status) {
+        $('#taskRankNum').textContent = status.level;
+        $('#taskRankTitle').textContent = status.title;
+        $('#taskTotalCompleted').textContent = status.totalCompleted;
+        if (status.xpNeeded == null) {
+            $('#taskXpFill').style.width = '100%';
+            $('#taskXpLabel').textContent = `${status.xp.toLocaleString()} XP — max rank`;
+        } else {
+            const pct = Math.min(100, (status.xp / status.xpNeeded) * 100);
+            $('#taskXpFill').style.width = pct + '%';
+            $('#taskXpLabel').textContent = `${status.xp.toLocaleString()} / ${status.xpNeeded.toLocaleString()} XP to next rank`;
+        }
+    }
     await renderTaskList($('#taskList'), $('#cancelTaskBtn'), () => true);
+    await renderTaskCrew(status);
 }
 $('#cancelTaskBtn').onclick = async () => {
     await call('cipher:tasks:cancel');
     await renderTasks();
 };
+
+// ── task co-op crew ──
+async function renderTaskCrew(status) {
+    const crew = await call('cipher:tasks:getCrewStatus');
+    const list = $('#taskCrewList');
+    const cancelBtn = $('#taskCancelCrewBtn');
+    const inviteBtn = $('#taskInviteBtn');
+    const picker = $('#taskCoopPicker');
+    list.innerHTML = '';
+    picker.innerHTML = '';
+    picker.classList.add('hidden');
+
+    const busy = !!(status && status.active);
+
+    if (!crew) {
+        list.innerHTML = '<div class="log-empty">No crew yet — invite someone to start a co-op job.</div>';
+        cancelBtn.classList.add('hidden');
+        inviteBtn.disabled = busy;
+        return;
+    }
+
+    Object.values(crew.members).forEach((name) => {
+        const row = document.createElement('div');
+        row.className = 'member';
+        row.innerHTML = `<span class="member-name">${escapeHtml(name)}</span>`;
+        list.appendChild(row);
+    });
+
+    if (crew.isLeader) {
+        cancelBtn.classList.remove('hidden');
+        inviteBtn.disabled = crew.size >= crew.maxSize || busy;
+        if (crew.size >= 2 && !busy) {
+            const coopTasks = (await call('cipher:tasks:getCoopTasks')) || [];
+            picker.classList.remove('hidden');
+            picker.innerHTML = '<div class="log-empty" style="text-align:left;padding:4px 0;">Pick a job to run together:</div>';
+            coopTasks.forEach((t) => {
+                const row = document.createElement('div');
+                row.className = 'member';
+                row.innerHTML = `
+                    <span class="member-name">${escapeHtml(t.label)}${t.coopOnly ? ' <span class="wanted-flag">CO-OP ONLY</span>' : ''}</span>
+                    <span class="member-rank">${taskRewardLabel(t)}</span>
+                    <div class="member-actions"><button class="btn btn-accent" data-coop-task="${t.id}">Start</button></div>`;
+                picker.appendChild(row);
+            });
+            picker.querySelectorAll('[data-coop-task]').forEach((btn) => {
+                btn.onclick = async () => {
+                    const res = await call('cipher:tasks:acceptCoop', btn.dataset.coopTask);
+                    if (res.ok) { flash('Crew job started — check your map.', 'success'); nui('close'); }
+                    else flash(res.error || 'Failed', 'error');
+                    await renderTasks();
+                };
+            });
+        }
+    } else {
+        cancelBtn.classList.add('hidden');
+        inviteBtn.disabled = true;
+    }
+}
+
+$('#taskInviteBtn').onclick = async () => {
+    const id = $('#taskInviteId').value;
+    if (!id) return;
+    const res = await call('cipher:tasks:inviteCoop', Number(id));
+    $('#taskInviteId').value = '';
+    if (res.ok) flash('Invite sent', 'success');
+    else flash(res.error || 'Failed', 'error');
+    await renderTasks();
+};
+$('#taskCancelCrewBtn').onclick = async () => {
+    await call('cipher:tasks:cancelCrew');
+    await renderTasks();
+};
+
+// ── task badges + leaderboard ──
+async function renderTaskBadges() {
+    const list = $('#taskBadgeList');
+    const achievements = (await call('cipher:tasks:getAchievements')) || [];
+    list.innerHTML = '';
+    if (!achievements.length) { list.innerHTML = '<div class="log-empty">No badges configured.</div>'; return; }
+    achievements.forEach((a) => {
+        const row = document.createElement('div');
+        row.className = 'member' + (a.earned ? '' : ' is-locked');
+        row.innerHTML = `
+            <span class="member-name">${a.earned ? '🏅' : '🔒'} ${escapeHtml(a.label)}</span>
+            <span class="member-rank">${escapeHtml(a.description)}</span>`;
+        list.appendChild(row);
+    });
+}
+
+async function renderTaskLeaderboard() {
+    const list = $('#taskLeaderboard');
+    const rows = (await call('cipher:tasks:getLeaderboard')) || [];
+    list.innerHTML = '';
+    if (!rows.length) { list.innerHTML = '<div class="log-empty">No completed jobs yet.</div>'; return; }
+    rows.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'member contributor-row';
+        row.innerHTML = `
+            <span class="contributor-rank">#${i + 1}</span>
+            <span class="member-name">${escapeHtml(r.name)}</span>
+            <span class="member-rank">Lv.${r.level} — ${r.total_completed} jobs, ${r.badges} badges</span>`;
+        list.appendChild(row);
+    });
+}
 
 // ── Car boosting (fully standalone — no gang tie-in) ──
 async function renderBoosting() {

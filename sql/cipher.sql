@@ -60,6 +60,19 @@ CREATE TABLE IF NOT EXISTS `cipher_task_cooldowns` (
     PRIMARY KEY (`citizenid`, `task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Personal task rank — independent of gang membership (survives leaving/
+-- joining a different gang), mirrors cipher_boost_stats' shape. XP here is
+-- separate from the gang rep tasks also pay out; it only gates which task
+-- variants (Config.Tasks[*].minLevel) are available to you.
+CREATE TABLE IF NOT EXISTS `cipher_task_stats` (
+    `citizenid`     VARCHAR(64)     NOT NULL,
+    `name`          VARCHAR(96)     NOT NULL DEFAULT '',
+    `xp`            INT             NOT NULL DEFAULT 0,
+    `level`         INT             NOT NULL DEFAULT 1,
+    `total_completed` INT           NOT NULL DEFAULT 0,
+    PRIMARY KEY (`citizenid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Zones are admin-assigned only — there is no in-world capture. A zone may
 -- be seeded from Config.Territories, or created entirely from the admin
 -- tablet (which also sets coords from the admin's current position).

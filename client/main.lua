@@ -34,11 +34,14 @@ CreateThread(function()
     end
 end)
 
--- ── task blip / carry prop / kill target / pickup+dropoff targets ──
+-- ── task blip / carry prop / kill target / pickup+dropoff / escort / heist ──
 -- Server is the sole authority on stage/completion; this just shows
 -- where to go, runs the actual target interactions, and handles purely
--- visual flavor (carried prop, spawned kill target) for whatever the
--- server says the job currently is.
+-- visual flavor (carried prop, spawned NPCs) for whatever the server says
+-- the job currently is. For co-op jobs, only the crew leader's client ever
+-- spawns an entity (killPed/escortPed/dropoffPed) — every crew member's
+-- client independently runs this same handler, so spawning unconditionally
+-- would create duplicate networked peds.
 local hasTarget = GetResourceState('ox_target') == 'started'
 local taskBlip = nil
 local carryProp = nil
@@ -46,6 +49,9 @@ local killPed = nil
 local killThread = false
 local pickupZoneId = nil
 local dropoffPed = nil
+local escortPed = nil
+local escortThread = false
+local heistZoneId = nil
 local fallbackPrompt = nil -- { coords, label, action } when ox_target isn't handling the current step
 
 local function clearTaskBlip()
@@ -71,8 +77,29 @@ local function clearDropoffPed()
     if dropoffPed then DeleteEntity(dropoffPed); dropoffPed = nil end
 end
 
+local function clearEscortPed()
+    if escortPed then DeleteEntity(escortPed); escortPed = nil end
+end
+
+local function clearHeistZone()
+    if heistZoneId then
+        pcall(function() exports.ox_target:removeZone(heistZoneId) end)
+        heistZoneId = nil
+    end
+end
+
 local function clearFallbackPrompt()
     if fallbackPrompt then lib.hideTextUI(); fallbackPrompt = nil end
+end
+
+local function clearAllTaskVisuals()
+    clearCarryProp()
+    clearKillPed()
+    clearPickupZone()
+    clearDropoffPed()
+    clearEscortPed()
+    clearHeistZone()
+    clearFallbackPrompt()
 end
 
 -- Single proximity+[E] loop backing whichever interaction ox_target isn't
@@ -104,8 +131,15 @@ local function attachCarryProp(model)
     AttachEntityToEntity(carryProp, ped, GetPedBoneIndex(ped, 28422), 0.1, 0.02, 0.0, 0.0, 0.0, 0.0, true, true, false, true, 1, true)
 end
 
-local function spawnKillTarget(spawn, model, weapon)
+local function spawnKillTarget(spawn, model, weapon, isLeader)
     clearKillPed()
+    if isLeader == false then
+        taskBlip = AddBlipForCoord(spawn.x, spawn.y, spawn.z)
+        SetBlipSprite(taskBlip, 84)
+        SetBlipColour(taskBlip, 1)
+        SetBlipRoute(taskBlip, true)
+        return
+    end
     if not IsModelValid(model) then
         lib.notify({ description = ('Bad ped model for this task (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
         return
@@ -181,9 +215,85 @@ local function setupPickupTarget(coords)
     end
 end
 
-local function setupDropoffTarget(coords, model)
+local function spawnEscort(spawn, destination, model, radius, isLeader)
+    clearEscortPed()
+    if isLeader == false then
+        taskBlip = AddBlipForCoord(destination.x, destination.y, destination.z)
+        SetBlipSprite(taskBlip, 280)
+        SetBlipColour(taskBlip, 5)
+        SetBlipRoute(taskBlip, true)
+        return
+    end
+    if not IsModelValid(model) then
+        lib.notify({ description = ('Bad escort ped model (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
+        return
+    end
+    lib.requestModel(model)
+    escortPed = CreatePed(4, model, spawn.x, spawn.y, spawn.z, 0.0, true, true)
+    SetBlockingOfNonTemporaryEvents(escortPed, true)
+    SetPedCanRagdoll(escortPed, true)
+
+    local ped = PlayerPedId()
+    TaskFollowToOffsetOfEntity(escortPed, ped, ped, 0.0, -1.5, 0.0, 1.0, -1, 2.0, true)
+
+    taskBlip = AddBlipForCoord(destination.x, destination.y, destination.z)
+    SetBlipSprite(taskBlip, 280)
+    SetBlipColour(taskBlip, 5)
+    SetBlipRoute(taskBlip, true)
+    BeginTextCommandSetBlipName('STRING')
+    AddTextComponentString('Escort destination')
+    EndTextCommandSetBlipName(taskBlip)
+
+    if escortThread then return end
+    escortThread = true
+    CreateThread(function()
+        while escortPed do
+            Wait(1000)
+            if not escortPed then break end
+            if not DoesEntityExist(escortPed) or IsEntityDead(escortPed) then
+                lib.notify({ description = 'The escort was killed — job failed.', type = 'error' })
+                lib.callback.await('cipher:tasks:cancel', false)
+                break
+            end
+            local playerCoords = GetEntityCoords(PlayerPedId())
+            if #(playerCoords - destination) <= (radius or 5.0) and #(GetEntityCoords(escortPed) - destination) <= (radius or 5.0) + 3.0 then
+                local res = lib.callback.await('cipher:tasks:doEscortComplete', false)
+                if res and res.ok then
+                    lib.notify({ description = 'Escort delivered safely.', type = 'success' })
+                elseif res and res.error then
+                    lib.notify({ description = res.error, type = 'error' })
+                end
+                break
+            end
+        end
+        escortThread = false
+    end)
+end
+
+local function setupHeistTarget(coords, label, radius, onArrive)
+    clearHeistZone()
+    clearFallbackPrompt()
+    local zoneOk = false
+    if hasTarget then
+        local ok, id = pcall(function()
+            return exports.ox_target:addSphereZone({
+                coords = coords, radius = radius or 2.5, debug = false,
+                options = {
+                    { name = 'cipher_heist_stage', label = label, icon = 'fas fa-user-secret', onSelect = onArrive },
+                },
+            })
+        end)
+        if ok and id then heistZoneId = id; zoneOk = true end
+    end
+    if not zoneOk then
+        fallbackPrompt = { coords = coords, label = label, action = onArrive }
+    end
+end
+
+local function setupDropoffTarget(coords, model, isLeader)
     clearDropoffPed()
     clearFallbackPrompt()
+    if isLeader == false then return end
     if not IsModelValid(model) then
         lib.notify({ description = ('Bad dropoff ped model (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
         return
@@ -212,27 +322,60 @@ end
 
 -- Car boosting is its own standalone system now — see client/boosting.lua.
 
+local function doHeistStage(callbackName)
+    local res = lib.callback.await(callbackName, false)
+    if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+end
+
+local function doInfiltrate(holdSeconds)
+    if lib.progressBar({ duration = (holdSeconds or 6) * 1000, label = 'Working the lock...', useWhileDead = false, canCancel = true }) then
+        doHeistStage('cipher:tasks:doInfiltrate')
+    end
+end
+
 RegisterNetEvent('cipher:client:taskUpdate', function(job)
     clearTaskBlip()
     if not job then
-        clearCarryProp()
-        clearKillPed()
-        clearPickupZone()
-        clearDropoffPed()
-        clearFallbackPrompt()
+        clearAllTaskVisuals()
         return
     end
 
     if job.type == 'kill' then
-        clearCarryProp()
-        clearPickupZone()
-        clearDropoffPed()
-        clearFallbackPrompt()
-        spawnKillTarget(job.spawn, job.pedModel, job.weapon)
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearEscortPed(); clearHeistZone(); clearFallbackPrompt()
+        spawnKillTarget(job.spawn, job.pedModel, job.weapon, job.isLeader)
         return
     end
 
-    clearKillPed()
+    if job.type == 'escort' then
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearHeistZone(); clearFallbackPrompt()
+        spawnEscort(job.spawn, job.destination, job.pedModel, job.radius, job.isLeader)
+        return
+    end
+
+    if job.type == 'heist' then
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearEscortPed()
+        local label, action
+        if job.stage == 'infiltrate' then
+            label, action = 'Infiltrate', function() doInfiltrate(job.holdSeconds) end
+        elseif job.stage == 'grab' then
+            label, action = 'Grab It', function() doHeistStage('cipher:tasks:doGrab') end
+        else
+            label, action = 'Escape', function() doHeistStage('cipher:tasks:doEscape') end
+        end
+        setupHeistTarget(job.point, label, job.radius, action)
+
+        taskBlip = AddBlipForCoord(job.point.x, job.point.y, job.point.z)
+        SetBlipSprite(taskBlip, 511)
+        SetBlipColour(taskBlip, job.stage == 'escape' and 1 or 5)
+        SetBlipRoute(taskBlip, true)
+        BeginTextCommandSetBlipName('STRING')
+        AddTextComponentString(label)
+        EndTextCommandSetBlipName(taskBlip)
+        return
+    end
+
+    -- delivery
+    clearKillPed(); clearEscortPed(); clearHeistZone()
 
     if job.stage == 'pickup' then
         clearCarryProp()
@@ -241,7 +384,7 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     elseif job.stage == 'dropoff' then
         clearPickupZone()
         if job.carryProp then attachCarryProp(job.carryProp) else clearCarryProp() end
-        setupDropoffTarget(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01')
+        setupDropoffTarget(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01', job.isLeader)
     end
 
     local coords = job.stage == 'pickup' and job.pickup or job.dropoff
@@ -252,6 +395,20 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     BeginTextCommandSetBlipName('STRING')
     AddTextComponentString(job.stage == 'pickup' and 'Pickup' or 'Dropoff')
     EndTextCommandSetBlipName(taskBlip)
+end)
+
+-- Incoming task co-op invite -> ox_lib confirm dialog.
+RegisterNetEvent('cipher:client:taskCoopInvite', function(info)
+    local accepted = lib.alertDialog({
+        header = 'Crew Invite',
+        content = ('**%s** invited you to crew up on a task.\n\nAccept?'):format(info.fromName),
+        centered = true,
+        cancel = true,
+        labels = { confirm = 'Accept', cancel = 'Decline' },
+    })
+    if accepted == 'confirm' then
+        TriggerServerEvent('cipher:server:acceptTaskCoopInvite')
+    end
 end)
 
 -- ── model test helper ──
