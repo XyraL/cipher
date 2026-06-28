@@ -52,6 +52,9 @@ local dropoffPed = nil
 local escortPed = nil
 local escortThread = false
 local heistZoneId = nil
+local courierVan = nil
+local courierZoneId = nil
+local courierAmbushPeds = {}
 local fallbackPrompt = nil -- { coords, label, action } when ox_target isn't handling the current step
 
 local function clearTaskBlip()
@@ -88,6 +91,25 @@ local function clearHeistZone()
     end
 end
 
+local function clearCourierAmbush()
+    for _, p in ipairs(courierAmbushPeds) do
+        if DoesEntityExist(p) then DeleteEntity(p) end
+    end
+    courierAmbushPeds = {}
+end
+
+local function clearCourierVan()
+    clearCourierAmbush()
+    if courierVan then DeleteEntity(courierVan); courierVan = nil end
+end
+
+local function clearCourierZone()
+    if courierZoneId then
+        pcall(function() exports.ox_target:removeZone(courierZoneId) end)
+        courierZoneId = nil
+    end
+end
+
 local function clearFallbackPrompt()
     if fallbackPrompt then lib.hideTextUI(); fallbackPrompt = nil end
 end
@@ -99,6 +121,8 @@ local function clearAllTaskVisuals()
     clearDropoffPed()
     clearEscortPed()
     clearHeistZone()
+    clearCourierVan()
+    clearCourierZone()
     clearFallbackPrompt()
 end
 
@@ -290,10 +314,87 @@ local function setupHeistTarget(coords, label, radius, onArrive)
     end
 end
 
-local function setupDropoffTarget(coords, model, isLeader)
+local function setupCourierTarget(coords, label, radius, onArrive)
+    clearCourierZone()
+    clearFallbackPrompt()
+    local zoneOk = false
+    if hasTarget then
+        local ok, id = pcall(function()
+            return exports.ox_target:addSphereZone({
+                coords = coords, radius = radius or 6.0, debug = false,
+                options = {
+                    { name = 'cipher_courier_stage', label = label, icon = 'fas fa-truck', onSelect = onArrive },
+                },
+            })
+        end)
+        if ok and id then courierZoneId = id; zoneOk = true end
+    end
+    if not zoneOk then
+        fallbackPrompt = { coords = coords, label = label, action = onArrive }
+    end
+end
+
+-- Spawns the courier van for the job leader only (or solo). Followers just
+-- see it physically — they don't need their own copy of the vehicle.
+local function spawnCourierVan(vanSpawn, model, isLeader)
+    clearCourierVan()
+    if isLeader == false then return end
+    if not IsModelValid(model) then
+        lib.notify({ description = ('Bad van model for this task (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
+        return
+    end
+    lib.requestModel(model)
+    courierVan = CreateVehicle(model, vanSpawn.x, vanSpawn.y, vanSpawn.z, vanSpawn.w or 0.0, true, true)
+    SetVehicleOnGroundProperly(courierVan)
+    SetVehicleHasBeenOwnedByPlayer(courierVan, true)
+    SetVehicleNeedsToBeHotwired(courierVan, false)
+    SetVehicleDoorsLocked(courierVan, 1)
+
+    local netId = NetworkGetNetworkIdFromEntity(courierVan)
+    lib.callback.await('cipher:tasks:registerVan', false, netId)
+end
+
+-- Ambush is purely atmospheric flavor — server already rolled the chance
+-- into ambushChance being non-zero on this job; surviving or losing the
+-- fight doesn't gate completion, same trust level as Boosting's guards.
+-- The heads-up notify before anything spawns is the whole point — never
+-- a blind sucker-punch.
+local function maybeTriggerCourierAmbush(chance)
+    if not chance or chance <= 0 or math.random(100) > chance then return end
+    SetTimeout(math.random(8000, 18000), function()
+        if not courierVan or not DoesEntityExist(courierVan) then return end
+        lib.notify({ description = 'You notice a car tailing you...', type = 'inform', duration = 4000 })
+        SetTimeout(4000, function()
+            if not courierVan or not DoesEntityExist(courierVan) then return end
+            lib.notify({ description = "They're making a move — defend yourself!", type = 'error' })
+            local ped = PlayerPedId()
+            AddRelationshipGroup('cipher_hitcontract')
+            local hostileGroup = GetHashKey('cipher_hitcontract')
+            SetRelationshipBetweenGroups(5, hostileGroup, `PLAYER`)
+            SetRelationshipBetweenGroups(5, `PLAYER`, hostileGroup)
+            for i = 1, 2 do
+                local offset = GetOffsetFromEntityInWorldCoords(ped, math.random(-8, 8) + 0.0, math.random(-8, 8) + 0.0, 0.0)
+                local model = `g_m_y_lost_01`
+                lib.requestModel(model)
+                local hPed = CreatePed(4, model, offset.x, offset.y, offset.z, 0.0, true, true)
+                SetPedRelationshipGroupHash(hPed, hostileGroup)
+                GiveWeaponToPed(hPed, GetHashKey('WEAPON_PISTOL'), 250, false, true)
+                SetPedCombatAttributes(hPed, 46, true)
+                SetPedCombatAttributes(hPed, 5, true)
+                SetPedFleeAttributes(hPed, 0, false)
+                TaskCombatPed(hPed, ped, 0, 16)
+                courierAmbushPeds[#courierAmbushPeds + 1] = hPed
+            end
+        end)
+    end)
+end
+
+local function setupDropoffTarget(coords, model, isLeader, label, action)
     clearDropoffPed()
     clearFallbackPrompt()
     if isLeader == false then return end
+    label = label or 'Make Delivery'
+    action = action or doDropoff
     if not IsModelValid(model) then
         lib.notify({ description = ('Bad dropoff ped model (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
         return
@@ -309,14 +410,14 @@ local function setupDropoffTarget(coords, model, isLeader)
     if hasTarget then
         local ok = pcall(function()
             exports.ox_target:addLocalEntity(dropoffPed, {
-                { name = 'cipher_dropoff_task', label = 'Make Delivery', icon = 'fas fa-handshake',
-                  onSelect = doDropoff },
+                { name = 'cipher_dropoff_task', label = label, icon = 'fas fa-handshake',
+                  onSelect = action },
             })
         end)
         zoneOk = ok
     end
     if not zoneOk then
-        fallbackPrompt = { coords = coords, label = 'Make Delivery', action = doDropoff }
+        fallbackPrompt = { coords = coords, label = label, action = action }
     end
 end
 
@@ -341,19 +442,55 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     end
 
     if job.type == 'kill' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearEscortPed(); clearHeistZone(); clearFallbackPrompt()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearFallbackPrompt()
         spawnKillTarget(job.spawn, job.pedModel, job.weapon, job.isLeader)
         return
     end
 
     if job.type == 'escort' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearHeistZone(); clearFallbackPrompt()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearFallbackPrompt()
         spawnEscort(job.spawn, job.destination, job.pedModel, job.radius, job.isLeader)
         return
     end
 
+    if job.type == 'courier' then
+        clearCarryProp(); clearPickupZone(); clearKillPed(); clearEscortPed(); clearHeistZone()
+        if job.stage == 'enroute' then
+            clearDropoffPed(); clearCourierZone()
+            spawnCourierVan(job.vanSpawn, job.vanModel, job.isLeader)
+            maybeTriggerCourierAmbush(job.ambushChance)
+            setupCourierTarget(job.dropoff, 'Unload Package', job.radius, function()
+                local res = lib.callback.await('cipher:tasks:doUnload', false)
+                if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+            end)
+        elseif job.stage == 'handoff' then
+            clearCourierZone()
+            if job.carryProp then attachCarryProp(job.carryProp) else clearCarryProp() end
+            setupDropoffTarget(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01', job.isLeader, 'Hand Off Package', function()
+                local res = lib.callback.await('cipher:tasks:doCourierHandoff', false)
+                if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+            end)
+        else -- return
+            clearDropoffPed(); clearCarryProp()
+            setupCourierTarget(job.vanSpawn, 'Return Van', job.radius, function()
+                local res = lib.callback.await('cipher:tasks:doReturnVan', false)
+                if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+            end)
+        end
+
+        local coords = job.stage == 'return' and job.vanSpawn or job.dropoff
+        taskBlip = AddBlipForCoord(coords.x, coords.y, coords.z)
+        SetBlipSprite(taskBlip, job.stage == 'return' and 477 or (job.stage == 'handoff' and 358 or 1))
+        SetBlipColour(taskBlip, job.stage == 'return' and 5 or (job.stage == 'handoff' and 2 or 5))
+        SetBlipRoute(taskBlip, true)
+        BeginTextCommandSetBlipName('STRING')
+        AddTextComponentString(job.stage == 'return' and 'Return the van' or (job.stage == 'handoff' and 'Hand off' or 'Drive to drop-off'))
+        EndTextCommandSetBlipName(taskBlip)
+        return
+    end
+
     if job.type == 'heist' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearEscortPed()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearEscortPed(); clearCourierVan(); clearCourierZone()
         local label, action
         if job.stage == 'infiltrate' then
             label, action = 'Infiltrate', function() doInfiltrate(job.holdSeconds) end
@@ -375,7 +512,7 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     end
 
     -- delivery
-    clearKillPed(); clearEscortPed(); clearHeistZone()
+    clearKillPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone()
 
     if job.stage == 'pickup' then
         clearCarryProp()
@@ -409,6 +546,16 @@ RegisterNetEvent('cipher:client:taskCoopInvite', function(info)
     if accepted == 'confirm' then
         TriggerServerEvent('cipher:server:acceptTaskCoopInvite')
     end
+end)
+
+-- Server tells the van's owner to clean it up once the job ends (complete,
+-- cancelled, or timed out) — netId-targeted so it works even if a fresh
+-- taskUpdate already cleared courierVan locally.
+RegisterNetEvent('cipher:client:taskCleanupVan', function(netId)
+    local veh = NetworkGetEntityFromNetworkId(netId)
+    if veh and veh ~= 0 and DoesEntityExist(veh) then DeleteEntity(veh) end
+    if courierVan == veh then courierVan = nil end
+    clearCourierAmbush()
 end)
 
 -- ── model test helper ──

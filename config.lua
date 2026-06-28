@@ -323,37 +323,54 @@ Config.TasksCoop = {
 -- type = 'heist': three sequential target points — infiltrate (hold the
 --   interaction for holdSeconds), grab (instant), escape (reach the point
 --   within the task's timeLimitSeconds, counted from when you started).
+-- type = 'courier': a full van-delivery loop. A van spawns at `vanSpawn`
+--   with the package already "in the back" (just flavor — there's no
+--   physical item, the carryProp shows once you unload). Drive it to
+--   `dropoff`, unload (target prompt, validated by BOTH your position and
+--   the van's actual position — the van isn't just along for the ride),
+--   hand the package to the ped there, then drive the van all the way
+--   back to `vanSpawn` to actually finish the job — delivering the
+--   package alone doesn't complete it, the van has to come home too.
+--   `ambushChance` (0-100) is rolled once per job during the drive out —
+--   on a hit you get a heads-up notification a few seconds before hostiles
+--   show up near you, so it never feels like a blindside.
 -- (Car boosting is NOT a task type — it's a fully separate system with its
 -- own levels/XP/leaderboard, independent of gangs. See Config.Boosting.)
 -- ─────────────────────────────────────────────────────────────
 Config.Tasks = {
     {
         id = 'package_run',
-        type = 'delivery',
+        type = 'courier',
         label = 'Package Run',
         minLevel = 1,
-        pickup = vec3(-48.4, -1757.6, 29.4),
+        -- Placeholders — pick your own spots; verify the van model with /testmodel.
+        vanModel = 'speedo',
+        vanSpawn = vec4(-48.4, -1757.6, 29.4, 70.0),
         dropoff = vec3(1196.5, -1287.6, 35.1),
-        radius = 3.0,             -- meters to count as "close enough to target"
-        reward = 25,              -- personal + gang rep on completion
-        xp = 15,                  -- personal task-rank XP on completion
-        cooldownMinutes = 20,     -- per player, per task
-        timeLimitSeconds = 420,   -- fail if not delivered within this window (0 = no limit)
+        radius = 6.0,             -- meters to count as "close enough" (player AND van)
+        reward = 35,              -- personal + gang rep on completion
+        xp = 25,                  -- personal task-rank XP on completion
+        cooldownMinutes = 25,     -- per player, per task
+        timeLimitSeconds = 600,   -- fail if not finished (van home included) within this window
+        ambushChance = 25,
+        carryProp = 'prop_box_ammo04a', -- shown while carrying the unloaded package to the ped
         -- g_m_y_lost_01 confirmed valid via /testmodel — the ped you hand the package to.
         dropoffPedModel = 'g_m_y_lost_01',
     },
     {
         id = 'briefcase_run',
-        type = 'delivery',
+        type = 'courier',
         label = 'Briefcase Run',
         minLevel = 1,
-        pickup = vec3(-48.4, -1757.6, 29.4),
+        vanModel = 'speedo',
+        vanSpawn = vec4(-48.4, -1757.6, 29.4, 70.0),
         dropoff = vec3(1196.5, -1287.6, 35.1),
-        radius = 3.0,
-        reward = 35,
-        xp = 20,
-        cooldownMinutes = 25,
-        timeLimitSeconds = 420,
+        radius = 6.0,
+        reward = 50,
+        xp = 35,
+        cooldownMinutes = 30,
+        timeLimitSeconds = 600,
+        ambushChance = 40,
         -- prop_box_ammo04a confirmed valid via /testmodel.
         carryProp = 'prop_box_ammo04a',
         dropoffPedModel = 'g_m_y_lost_01',

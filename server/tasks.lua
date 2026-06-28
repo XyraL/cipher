@@ -25,6 +25,22 @@ local pendingCoopInvites = {} -- [targetSrc] = { fromSrc, fromName }
 
 local function dist(a, b) return #(a - b) end
 
+-- Validates a courier job's van by its actual networked position, not the
+-- player's — mirrors how Boosting validates its drop-off by the vehicle's
+-- position rather than just trusting the player walked up to the right spot.
+local function vanNear(job, coords, radius)
+    if not job or not job.vanNetId then return false end
+    local veh = NetworkGetEntityFromNetworkId(job.vanNetId)
+    if not veh or veh == 0 or not DoesEntityExist(veh) then return false end
+    return dist(GetEntityCoords(veh), coords) <= (radius or 6.0)
+end
+
+local function cleanupVan(src, job)
+    if not job or not job.vanNetId then return end
+    local owner = job.coop and job.leaderSrc or src
+    TriggerClientEvent('cipher:client:taskCleanupVan', owner, job.vanNetId)
+end
+
 -- ── personal task rank ──
 local function sortedTaskLevels()
     local levels = {}
@@ -260,6 +276,15 @@ local function stagePayloadFor(def, stage)
         else
             return { type = 'heist', stage = 'escape', point = def.escape, radius = def.radius }
         end
+    elseif def.type == 'courier' then
+        if stage == 'handoff' then
+            return { type = 'courier', stage = 'handoff', dropoff = def.dropoff, carryProp = def.carryProp, dropoffPedModel = def.dropoffPedModel }
+        elseif stage == 'return' then
+            return { type = 'courier', stage = 'return', vanSpawn = def.vanSpawn, radius = def.radius }
+        else
+            return { type = 'courier', stage = 'enroute', vanSpawn = def.vanSpawn, vanModel = def.vanModel,
+                     dropoff = def.dropoff, radius = def.radius, ambushChance = def.ambushChance }
+        end
     else
         return { type = 'delivery', stage = 'pickup', pickup = def.pickup, dropoff = def.dropoff, carryProp = def.carryProp }
     end
@@ -293,6 +318,9 @@ function Tasks.Accept(src, taskId)
     elseif def.type == 'heist' then
         active[src] = { id = taskId, stage = 'infiltrate', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'infiltrate'))
+    elseif def.type == 'courier' then
+        active[src] = { id = taskId, stage = 'enroute', startedAt = os.time() * 1000 }
+        TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'enroute'))
     else
         active[src] = { id = taskId, stage = 'pickup', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def))
@@ -347,6 +375,14 @@ function Tasks.AcceptCoop(src, taskId)
             active[m] = job
             TriggerClientEvent('cipher:client:taskUpdate', m, stagePayloadFor(def, 'infiltrate'))
         end
+    elseif def.type == 'courier' then
+        job.stage = 'enroute'
+        for _, m in ipairs(c.members) do
+            active[m] = job
+            local payload = stagePayloadFor(def, 'enroute')
+            payload.isLeader = (m == src)
+            TriggerClientEvent('cipher:client:taskUpdate', m, payload)
+        end
     else
         job.stage = 'pickup'
         for _, m in ipairs(c.members) do
@@ -362,6 +398,7 @@ end
 function Tasks.Cancel(src)
     local job = active[src]
     if not job then return false, 'no active task' end
+    cleanupVan(src, job)
     if job.coop then
         for _, m in ipairs(job.crew) do
             active[m] = nil
@@ -407,6 +444,7 @@ end
 
 local function completeTask(src, def)
     local job = active[src]
+    cleanupVan(src, job)
     if job and job.coop then
         for _, m in ipairs(job.crew) do
             active[m] = nil
@@ -554,6 +592,88 @@ function Tasks.DoEscape(src)
     return true
 end
 
+-- ── courier (van delivery loop) ──
+-- Only the leader's client ever spawns the van (co-op), so only the
+-- leader's registration call should be trusted to set vanNetId.
+function Tasks.RegisterVan(src, netId)
+    local job = active[src]
+    if not job or job.stage ~= 'enroute' then return false, 'no active courier job' end
+    if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
+    job.vanNetId = netId
+    return true
+end
+
+function Tasks.DoUnload(src)
+    local job = active[src]
+    if not job or job.stage ~= 'enroute' then return false, 'no active courier job' end
+    if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
+    local def = byId[job.id]
+    if not def then return false, 'unknown task' end
+
+    local ped = GetPlayerPed(src)
+    if ped == 0 or dist(GetEntityCoords(ped), def.dropoff) > (def.radius or 6.0) then
+        return false, 'too far from the dropoff'
+    end
+    if not vanNear(job, def.dropoff, def.radius) then
+        return false, 'the van needs to be here too'
+    end
+
+    job.stage = 'handoff'
+    local payload = stagePayloadFor(def, 'handoff')
+    payload.id = job.id
+    if job.coop then
+        for _, m in ipairs(job.crew) do
+            local p2 = {}
+            for k, v in pairs(payload) do p2[k] = v end
+            p2.isLeader = (m == src)
+            TriggerClientEvent('cipher:client:taskUpdate', m, p2)
+        end
+    else
+        TriggerClientEvent('cipher:client:taskUpdate', src, payload)
+    end
+    Framework.Notify(src, 'Unloaded — deliver it.', 'success')
+    return true
+end
+
+function Tasks.DoCourierHandoff(src)
+    local job = active[src]
+    if not job or job.stage ~= 'handoff' then return false, 'no active handoff' end
+    if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
+    local def = byId[job.id]
+    if not def then return false, 'unknown task' end
+
+    local ped = GetPlayerPed(src)
+    if ped == 0 or dist(GetEntityCoords(ped), def.dropoff) > (def.radius or 6.0) then
+        return false, 'too far from the dropoff'
+    end
+
+    job.stage = 'return'
+    local payload = stagePayloadFor(def, 'return')
+    payload.id = job.id
+    if job.coop then
+        for _, m in ipairs(job.crew) do TriggerClientEvent('cipher:client:taskUpdate', m, payload) end
+    else
+        TriggerClientEvent('cipher:client:taskUpdate', src, payload)
+    end
+    Framework.Notify(src, 'Delivered — bring the van home.', 'success')
+    return true
+end
+
+function Tasks.DoReturnVan(src)
+    local job = active[src]
+    if not job or job.stage ~= 'return' then return false, 'no active return' end
+    if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
+    local def = byId[job.id]
+    if not def then return false, 'unknown task' end
+
+    if not vanNear(job, def.vanSpawn, def.radius) then
+        return false, 'the van is not back yet'
+    end
+
+    completeTask(src, def)
+    return true
+end
+
 -- ── time-limit enforcement ──
 CreateThread(function()
     while true do
@@ -568,6 +688,7 @@ CreateThread(function()
                     local def = byId[job.id]
                     if def and def.timeLimitSeconds and def.timeLimitSeconds > 0 then
                         if (os.time() * 1000) - job.startedAt > def.timeLimitSeconds * 1000 then
+                            cleanupVan(src, job)
                             if job.coop then
                                 for _, m in ipairs(job.crew) do
                                     active[m] = nil
@@ -687,5 +808,25 @@ end)
 
 lib.callback.register('cipher:tasks:doEscape', function(src)
     local ok, err = Tasks.DoEscape(src)
+    return { ok = ok, error = err }
+end)
+
+lib.callback.register('cipher:tasks:registerVan', function(src, netId)
+    local ok, err = Tasks.RegisterVan(src, netId)
+    return { ok = ok, error = err }
+end)
+
+lib.callback.register('cipher:tasks:doUnload', function(src)
+    local ok, err = Tasks.DoUnload(src)
+    return { ok = ok, error = err }
+end)
+
+lib.callback.register('cipher:tasks:doCourierHandoff', function(src)
+    local ok, err = Tasks.DoCourierHandoff(src)
+    return { ok = ok, error = err }
+end)
+
+lib.callback.register('cipher:tasks:doReturnVan', function(src)
+    local ok, err = Tasks.DoReturnVan(src)
     return { ok = ok, error = err }
 end)
