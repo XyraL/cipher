@@ -1,9 +1,15 @@
 # Cipher — Gang Ops (v0.1)
 
 A modular encrypted criminal device for **QBox (qbx_core)** and **QBCore (qb-core)**.
-The device is a shell that hosts apps; the first app is **Gang Ops**. Ship future
-apps (Dark Web Market, Contracts Board, etc.) by registering them in
-`shared/apps.lua` — no changes to the shell required.
+The device is a shell that hosts apps; current apps are **Gang Ops**,
+**Blackmarket**, and **Boosting**. Ship future apps (Dark Web Market,
+Contracts Board, etc.) by registering them in `shared/apps.lua` — no changes
+to the shell required.
+
+Visually it leans hard into a cyberpunk/hacker-terminal look: scanlines,
+glowing corner brackets, a typed boot sequence on open (the admin tablet
+gets its own red-accented variant), and glitch-style transitions between
+apps/tabs. The app rail uses real icons + labels, not abbreviations.
 
 ## Requirements
 - `ox_lib`
@@ -116,20 +122,48 @@ apps (Dark Web Market, Contracts Board, etc.) by registering them in
   your level, and a server-wide recent-sells feed; a Badges tab tracks
   config-defined milestones (`Config.Boosting.achievements`); a
   Leaderboard tab ranks the top 10 by lifetime cars boosted.
+  - **Perks**: every level grants perk points (`Config.Boosting.levels[*].perkPoints`),
+    spent on permanent, passive upgrades from `Config.Boosting.perks` — cash
+    bonus %, fewer guards, a delayed dispatch alert, or a cheaper cooldown.
+    No inventory items involved, nothing consumed.
+  - **Co-op**: invite a specific nearby player (like a gang invite) to crew up
+    on a separate, harder job — a bigger guard count, a shorter clock, and
+    dispatch always fires instantly regardless of any Signal Jammer perk.
+    Cash gets a bonus (`Config.Boosting.coop.cashBonusPct`) before splitting
+    evenly across the crew; XP is **not** split, every member gets the full
+    amount. Only the crew leader's client actually spawns the vehicle/guards/
+    buyer ped (everyone else just sees it and can help fight) — this matters
+    if you ever touch `client/boosting.lua`, since spawning per-member would
+    create duplicate entities.
 
 ## Admin tablet
-Staff manage gangs in-game instead of editing config.lua/the DB by hand:
+Staff manage everything in-game instead of editing config.lua/the DB by hand.
 - Grant access in `server.cfg`:
   ```
   add_ace group.admin cipher.admin allow
   add_principal identifier.fivem:1234 group.admin
   ```
   (or add `cipher.admin` to whatever principal/group fits your setup)
-- Run `/admintablet` to open the panel: create/rename gangs, set boss, disband,
-  kick/promote members, adjust a member's personal rep or a gang's notoriety,
-  force-set bank/dues, and create/move/rename zones and assign their holder.
+- Run `/admintablet` to open the panel — six tabs:
+  - **Dashboard**: at-a-glance totals (gang count, zones assigned, total gang
+    bank, boosting player/total/active-job counts, chat message/handle
+    counts, dealer cooldown status).
+  - **Gangs**: create/rename gangs, set boss, disband, kick/promote members,
+    adjust a member's personal rep or a gang's notoriety, force-set bank/dues.
+  - **Zones**: create a zone at your current position, move/rename it, set
+    its per-cycle income, assign or clear its holder.
+  - **Boosting**: search any player by name or citizenid, directly edit their
+    level/XP/total boosted/total cash/perk points, or reset them to scratch
+    (also wipes owned perks).
+  - **Blackmarket**: view recent world chat with delete buttons, and a
+    handle→citizenid resolver for when you need to break the anonymity for
+    moderation.
+  - **Dealer**: view current rotating stock, force a reroll, or clear the
+    global contact cooldown live.
 - Everything here writes straight to the database — `Config.Gangs` is only
   used to seed gangs on first boot, not as an ongoing source of truth.
+- Every action across every tab re-checks the ACE permission server-side
+  (never just hidden client-side) and logs to the Discord admin webhook.
 
 ## Discord logging
 Optional — set any of `Config.Discord.adminWebhook` / `gangWebhook` / `economyWebhook`
