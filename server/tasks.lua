@@ -62,7 +62,10 @@ end
 local function ensureStats(citizenid, name)
     local row = getStats(citizenid)
     if row then return row end
-    MySQL.insert.await('INSERT INTO cipher_task_stats (citizenid, name) VALUES (?, ?)', { citizenid, name or citizenid })
+    -- Multiple callbacks (getStatus/getAvailable/getAchievements/...) can
+    -- all race to create the row on first tablet open — INSERT IGNORE
+    -- makes the loser of that race a no-op instead of a duplicate-key error.
+    MySQL.insert.await('INSERT IGNORE INTO cipher_task_stats (citizenid, name) VALUES (?, ?)', { citizenid, name or citizenid })
     return getStats(citizenid)
 end
 

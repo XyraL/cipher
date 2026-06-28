@@ -612,13 +612,14 @@ async function renderTasks() {
         $('#taskRankNum').textContent = status.level;
         $('#taskRankTitle').textContent = status.title;
         $('#taskTotalCompleted').textContent = status.totalCompleted;
+        const xp = status.xp || 0;
         if (status.xpNeeded == null) {
             $('#taskXpFill').style.width = '100%';
-            $('#taskXpLabel').textContent = `${status.xp.toLocaleString()} XP — max rank`;
+            $('#taskXpLabel').textContent = `${xp.toLocaleString()} XP — max rank`;
         } else {
-            const pct = Math.min(100, (status.xp / status.xpNeeded) * 100);
+            const pct = Math.min(100, (xp / status.xpNeeded) * 100);
             $('#taskXpFill').style.width = pct + '%';
-            $('#taskXpLabel').textContent = `${status.xp.toLocaleString()} / ${status.xpNeeded.toLocaleString()} XP to next rank`;
+            $('#taskXpLabel').textContent = `${xp.toLocaleString()} / ${status.xpNeeded.toLocaleString()} XP to next rank`;
         }
     }
     await renderTaskList($('#taskList'), $('#cancelTaskBtn'), () => true);
@@ -649,7 +650,7 @@ async function renderTaskCrew(status) {
         return;
     }
 
-    Object.values(crew.members).forEach((name) => {
+    Object.values(crew.members || {}).forEach((name) => {
         const row = document.createElement('div');
         row.className = 'member';
         row.innerHTML = `<span class="member-name">${escapeHtml(name)}</span>`;
@@ -806,7 +807,7 @@ async function renderBoostCrew(status) {
         return;
     }
 
-    Object.values(crew.members).forEach((name) => {
+    Object.values(crew.members || {}).forEach((name) => {
         const row = document.createElement('div');
         row.className = 'member';
         row.innerHTML = `<span class="member-name">${escapeHtml(name)}</span>`;
