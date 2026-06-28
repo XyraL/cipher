@@ -26,7 +26,7 @@ apps/tabs. The app rail uses real icons + labels, not abbreviations.
    `Config.DeviceItem`). Give yourself one, or use the `/gangops` command.
 4. Add `ensure cipher` to your `server.cfg` (after ox_lib, oxmysql, your framework,
    and ox_inventory).
-5. Tune `config.lua` — ranks, permissions, territory zones, notoriety, dues.
+5. Tune `config.lua` — ranks, permissions, territory zones, notoriety, perks.
 
 ## What's wired
 - Framework bridge with one unified API (`bridge/framework.lua`).
@@ -40,11 +40,23 @@ apps/tabs. The app rail uses real icons + labels, not abbreviations.
   `exports.cipher:AddNotoriety(gangId, amount, reason)` so other resources
   can feed it.
 - Territory: zones are assigned to a gang entirely through the admin tablet —
-  there is no in-world capture. Admins can create a zone and set its coords to
-  their current position, rename it, set its per-cycle income, and assign or
-  clear its holder. Assigned zones pay out on `Config.TerritoryIncomeMinutes`.
-  The map blip radius grows with the holding gang's tier
-  (`Config.ZoneRadiusGrowthPerTier`) — purely visual.
+  there is no in-world capture and **no passive income**, holding a zone is
+  prestige/visual only. Admins can create a zone and set its coords to their
+  current position, rename it, and assign or clear its holder. The map blip
+  radius grows with the holding gang's tier (`Config.ZoneRadiusGrowthPerTier`)
+  — purely visual. The Territory tab also renders a stylized SVG map (a
+  procedural landmass silhouette, terrain-tinted districts, compass, radar
+  sweep) plotting zones by their real world coordinates — not a literal
+  GTA map image, just enough to read as one.
+- Gang levels: a more granular prestige number + title (`Config.GangLevels`,
+  e.g. "Crew" → "Untouchable") layered on the *same* notoriety value the 4
+  broad tiers already use — purely additive, doesn't touch tier-gated
+  unlocks. Crossing a level threshold awards perk points.
+- Gang perk tree (`Config.GangPerks`, Boss-only via `manage_perks`): three
+  branches — Vault (slots/weight), Recruitment (max members), Workshop
+  (craft time/bonus output/early recipe-tier unlock) — each a chain of
+  tiers where tier N requires tier N-1 in that branch already owned. Spent
+  from the perk points gang levels award.
 - Tier unlocks: once a gang's notoriety reaches a tier, the Boss (or anyone
   with `place_objects`) can place that tier's benches anywhere — open the
   tablet's **Unlocks** tab, hit Place, then use scroll to set distance, Q/E to
@@ -81,14 +93,21 @@ apps/tabs. The app rail uses real icons + labels, not abbreviations.
     an armed hostile NPC there and reports back when it's dead. The server
     only trusts that report after `minKillSeconds` — a real trust concession,
     bounded by that minimum plus the normal cooldown/time-limit system.
-- Treasury: deposit/withdraw + weekly dues, with offline catch-up billing. Also
-  shows the gang's full notoriety/tier, not just the balance.
-- NUI tablet: main overview (with a progress bar toward the next tier), roster
-  (click a member for kick/promote/demote + personal rep + online status),
-  territory, tasks, unlocks (shows rep needed for anything still locked),
-  treasury, activity log. The activity log now also covers tasks
-  started/completed, drug sales, dealer calls/purchases, and crafting — not
-  just membership/bank/placement events.
+- Treasury: **no forced dues** — every member can deposit whenever they want;
+  withdrawing stays gated to `manage_bank` so one member can't drain it solo.
+  Styled like an actual bank statement, with a dedicated transaction ledger
+  (`cipher_gang_bank_log`) separate from the general activity log, plus the
+  gang's full notoriety/tier shown alongside the balance.
+- Member activity tracking: `last_seen` updates whenever a member opens the
+  tablet; the roster flags anyone inactive past `Config.GangInactivityDays`
+  and shows a top-contributors mini-leaderboard by personal rep.
+- NUI tablet: main overview (gang level/title badge + progress bar toward the
+  next tier, animated count-up stats), roster (click a member for
+  kick/promote/demote + personal rep + last-seen + online status), territory
+  map, tasks, unlocks (shows rep needed for anything still locked), treasury,
+  perks, activity log. The activity log covers tasks started/completed, drug
+  sales, dealer calls/purchases, crafting, and perk purchases — not just
+  membership/bank/placement events.
 - Blackmarket app: anonymous world chat + handle-addressed DMs. **Requires
   being in a gang** — the app doesn't even show in the rail otherwise (this
   is enforced server-side too, not just hidden in the UI). Every character
@@ -149,9 +168,10 @@ Staff manage everything in-game instead of editing config.lua/the DB by hand.
     bank, boosting player/total/active-job counts, chat message/handle
     counts, dealer cooldown status).
   - **Gangs**: create/rename gangs, set boss, disband, kick/promote members,
-    adjust a member's personal rep or a gang's notoriety, force-set bank/dues.
-  - **Zones**: create a zone at your current position, move/rename it, set
-    its per-cycle income, assign or clear its holder.
+    adjust a member's personal rep or a gang's notoriety, force-set the bank
+    balance.
+  - **Zones**: create a zone at your current position, move/rename it,
+    assign or clear its holder.
   - **Boosting**: search any player by name or citizenid, directly edit their
     level/XP/total boosted/total cash/perk points, or reset them to scratch
     (also wipes owned perks).
@@ -170,7 +190,7 @@ Optional — set any of `Config.Discord.adminWebhook` / `gangWebhook` / `economy
 to a Discord webhook URL to get live embeds for:
 - **admin**: every action taken through `/admintablet` (the audit trail)
 - **gang**: founded / disbanded / boss changed
-- **economy**: deposits, withdrawals, dues charged, dealer purchases
+- **economy**: deposits, withdrawals, dealer purchases
 
 Leave any of them blank to disable that category — nothing is required. Get a
 webhook URL from Discord: channel settings → Integrations → Webhooks → New
