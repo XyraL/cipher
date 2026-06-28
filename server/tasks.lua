@@ -23,12 +23,12 @@ for _, t in ipairs(Config.Tasks) do byId[t.id] = t end
 local crews = {}              -- [leaderSrc] = { members = {...}, names = {src=name} }
 local pendingCoopInvites = {} -- [targetSrc] = { fromSrc, fromName }
 
-local function dist(a, b) return #(a - b) end
-
--- vec4 (has a heading .w) can't be subtracted from the vec3 GetEntityCoords
--- returns — Lua's vector ops require matching types. Coordinates that may
--- come in as either (vanSpawn is a vec4 for heading) get flattened here.
+-- vec4 (has a heading .w, used for van/dropoff spawn points) can't be
+-- subtracted from a vec3 (what GetEntityCoords returns) — Lua's vector ops
+-- require matching types. Flattening both sides here makes dist() safe no
+-- matter which kind either argument actually is.
 local function asVec3(v) return vec3(v.x, v.y, v.z) end
+local function dist(a, b) return #(asVec3(a) - asVec3(b)) end
 
 -- Validates a courier job's van by its actual networked position, not the
 -- player's — mirrors how Boosting validates its drop-off by the vehicle's
@@ -37,7 +37,7 @@ local function vanNear(job, coords, radius)
     if not job or not job.vanNetId then return false end
     local veh = NetworkGetEntityFromNetworkId(job.vanNetId)
     if not veh or veh == 0 or not DoesEntityExist(veh) then return false end
-    return dist(GetEntityCoords(veh), asVec3(coords)) <= (radius or 6.0)
+    return dist(GetEntityCoords(veh), coords) <= (radius or 6.0)
 end
 
 local function cleanupVan(src, job)
@@ -293,7 +293,8 @@ local function stagePayloadFor(def, stage, job)
             return { type = 'courier', stage = 'return', vanSpawn = vanSpawn, radius = def.radius }
         else
             return { type = 'courier', stage = 'enroute', vanSpawn = vanSpawn, vanModel = def.vanModel,
-                     dropoff = dropoff, radius = def.radius, ambushChance = def.ambushChance }
+                     dropoff = dropoff, radius = def.radius, ambushChance = def.ambushChance,
+                     dropoffPedModel = def.dropoffPedModel }
         end
     else
         return { type = 'delivery', stage = 'pickup', pickup = def.pickup, dropoff = def.dropoff, carryProp = def.carryProp }

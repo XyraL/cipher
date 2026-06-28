@@ -408,23 +408,41 @@ local function maybeTriggerCourierAmbush(chance)
     end)
 end
 
-local function setupDropoffTarget(coords, model, isLeader, label, action)
+-- Spawns the ped standing there, no interaction attached yet. Used for
+-- the courier hand-off ped, spawned the moment the job starts (alongside
+-- the van) so it's already waiting when the player arrives instead of
+-- popping in on arrival.
+local function spawnDropoffPedOnly(coords, model, isLeader)
     clearDropoffPed()
-    clearFallbackPrompt()
     if isLeader == false then return end
-    label = label or 'Make Delivery'
-    action = action or doDropoff
     if not IsModelValid(model) then
         lib.notify({ description = ('Bad dropoff ped model (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
         return
     end
     lib.requestModel(model)
-    dropoffPed = CreatePed(4, model, coords.x, coords.y, coords.z, 0.0, true, true)
+    dropoffPed = CreatePed(4, model, coords.x, coords.y, coords.z, coords.w or 0.0, true, true)
     PlaceEntityOnGroundProperly(dropoffPed)
+    -- Without this, OneSync can clean the ped up as "too far from any
+    -- player" before whoever's driving the van actually gets there.
+    SetEntityAsMissionEntity(dropoffPed, true, true)
     SetEntityInvincible(dropoffPed, true)
     SetBlockingOfNonTemporaryEvents(dropoffPed, true)
     FreezeEntityPosition(dropoffPed, true)
     TaskStartScenarioInPlace(dropoffPed, 'WORLD_HUMAN_STAND_IMPATIENT', 0, true)
+end
+
+local function setupDropoffTarget(coords, model, isLeader, label, action)
+    clearFallbackPrompt()
+    if isLeader == false then return end
+    label = label or 'Make Delivery'
+    action = action or doDropoff
+
+    -- The ped may already exist (courier spawns it early) — only spawn a
+    -- fresh one if it's missing, so we don't pop a second copy in.
+    if not dropoffPed or not DoesEntityExist(dropoffPed) then
+        spawnDropoffPedOnly(coords, model, isLeader)
+        if not dropoffPed then return end
+    end
 
     local zoneOk = false
     if hasTarget then
@@ -476,8 +494,12 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     if job.type == 'courier' then
         clearCarryProp(); clearPickupZone(); clearKillPed(); clearEscortPed(); clearHeistZone()
         if job.stage == 'enroute' then
-            clearDropoffPed(); clearCourierZone()
+            clearCourierZone()
             spawnCourierVan(job.vanSpawn, job.vanModel, job.isLeader)
+            -- Spawn the hand-off ped now, not at the handoff stage — it
+            -- should already be standing there when the van arrives, not
+            -- pop in the moment you unload.
+            spawnDropoffPedOnly(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01', job.isLeader)
             maybeTriggerCourierAmbush(job.ambushChance)
             setupCourierTarget(job.dropoff, 'Unload Package', job.radius, function()
                 local res = lib.callback.await('cipher:tasks:doUnload', false)
