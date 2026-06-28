@@ -3,17 +3,27 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <link rel="stylesheet" href="style.css" />
     <title>cipher</title>
 </head>
 <body>
     <div id="root" class="hidden">
         <div class="device">
+            <div class="device-corner tl"></div>
+            <div class="device-corner tr"></div>
+            <div class="device-corner bl"></div>
+            <div class="device-corner br"></div>
+
+            <div id="bootScreen" class="boot-screen">
+                <div id="bootLines" class="boot-lines"></div>
+            </div>
+
             <!-- App rail: makes the "device hosting apps" concept visible -->
             <aside class="rail">
                 <div class="rail-logo">C</div>
                 <nav id="appRail" class="rail-apps"></nav>
-                <button id="powerBtn" class="rail-power" title="Close">⏻</button>
+                <button id="powerBtn" class="rail-power" title="Close"><i class="fas fa-power-off"></i> Close</button>
             </aside>
 
             <!-- App surface -->
@@ -29,6 +39,86 @@
                     </div>
                 </header>
 
+                <!-- BOOSTING: open to everyone, gang or not, no gang tie-in at all -->
+                <section id="viewBoosting" class="view hidden">
+                    <nav class="tabs">
+                        <button class="tab is-active" data-tab="boost-job">Job</button>
+                        <button class="tab" data-tab="boost-crew">Crew</button>
+                        <button class="tab" data-tab="boost-intel">Intel</button>
+                        <button class="tab" data-tab="boost-perks">Perks</button>
+                        <button class="tab" data-tab="boost-leaderboard">Leaderboard</button>
+                        <button class="tab" data-tab="boost-badges">Badges</button>
+                    </nav>
+
+                    <!-- JOB -->
+                    <div class="tabview is-active" data-tabview="boost-job">
+                        <div class="boost-level-card">
+                            <div class="boost-level-label">
+                                <span id="boostLevelNum" class="boost-level-num">1</span>
+                                <span id="boostLevelLabel" class="muted">Joyrider</span>
+                            </div>
+                            <div class="overview-progress-track">
+                                <div id="boostXpFill" class="overview-progress-fill"></div>
+                            </div>
+                            <span id="boostXpLabel" class="muted">0 XP</span>
+                        </div>
+                        <div class="boost-stats-row">
+                            <div class="boost-stat"><span id="boostTotalCount">0</span><span class="muted">Cars boosted</span></div>
+                            <div class="boost-stat"><span id="boostTotalCash">$0</span><span class="muted">Total earned</span></div>
+                        </div>
+                        <div id="boostActiveStatus" class="muted hidden"></div>
+                        <button id="boostActionBtn" class="btn btn-accent boost-action-btn">Start Job</button>
+                        <button id="cancelBoostBtn" class="btn btn-ghost hidden">Cancel active job</button>
+                    </div>
+
+                    <!-- CREW -->
+                    <div class="tabview" data-tabview="boost-crew">
+                        <h2 class="boost-section-heading">Co-op crew <span class="wanted-flag">HARDER</span></h2>
+                        <div id="boostCrewList" class="member-list"></div>
+                        <div class="admin-form">
+                            <input id="boostInviteId" type="number" placeholder="player ID to invite" />
+                            <button id="boostInviteBtn" class="btn btn-ghost">Invite</button>
+                            <button id="boostStartCoopBtn" class="btn btn-accent hidden">Start Co-op Job</button>
+                            <button id="boostCancelCrewBtn" class="btn btn-ghost hidden">Disband crew</button>
+                        </div>
+                    </div>
+
+                    <!-- INTEL -->
+                    <div class="tabview" data-tabview="boost-intel">
+                        <div id="boostWantedSection" class="hidden">
+                            <h2 class="boost-section-heading">Wanted vehicles <span class="wanted-flag">BONUS</span></h2>
+                            <div id="boostWantedList" class="member-list"></div>
+                        </div>
+
+                        <h2 class="boost-section-heading">Possible vehicles at your level</h2>
+                        <div id="boostVehiclePreview" class="member-list"></div>
+
+                        <h2 class="boost-section-heading">Recent activity</h2>
+                        <div id="boostActivityFeed" class="log-list"></div>
+                    </div>
+
+                    <!-- PERKS -->
+                    <div class="tabview" data-tabview="boost-perks">
+                        <div class="row-between">
+                            <h2>Perks</h2>
+                            <span class="muted">Points: <span id="boostPerkPoints" class="handle-chip">0</span></span>
+                        </div>
+                        <div id="boostPerkList" class="member-list"></div>
+                    </div>
+
+                    <!-- BADGES -->
+                    <div class="tabview" data-tabview="boost-badges">
+                        <h2>Badges</h2>
+                        <div id="boostBadgeList" class="member-list"></div>
+                    </div>
+
+                    <!-- LEADERBOARD -->
+                    <div class="tabview" data-tabview="boost-leaderboard">
+                        <h2>Top Boosters</h2>
+                        <div id="boostLeaderboard" class="member-list"></div>
+                    </div>
+                </section>
+
                 <!-- NO GANG: admin-defined gangs only, nothing to do here -->
                 <section id="viewFound" class="view hidden">
                     <div class="found-card">
@@ -43,10 +133,15 @@
                         <button class="tab is-active" data-tab="main">Main</button>
                         <button class="tab" data-tab="roster">Roster</button>
                         <button class="tab" data-tab="territory">Territory</button>
-                        <button class="tab" data-tab="tasks">Tasks</button>
-                        <button class="tab" data-tab="unlocks">Unlocks</button>
-                        <button class="tab" data-tab="bank">Treasury</button>
-                        <button class="tab" data-tab="activity">Activity</button>
+                        <div class="tab-more">
+                            <button class="tab-more-btn" type="button">More <i class="fas fa-chevron-down"></i></button>
+                            <div class="tab-more-menu hidden">
+                                <button class="tab" data-tab="tasks">Tasks</button>
+                                <button class="tab" data-tab="unlocks">Unlocks</button>
+                                <button class="tab" data-tab="bank">Treasury</button>
+                                <button class="tab" data-tab="activity">Activity</button>
+                            </div>
+                        </div>
                     </nav>
 
                     <!-- MAIN OVERVIEW -->
@@ -221,45 +316,128 @@
 
     <div id="adminRoot" class="hidden">
         <div class="device admin-device">
+            <div class="device-corner tl"></div>
+            <div class="device-corner tr"></div>
+            <div class="device-corner bl"></div>
+            <div class="device-corner br"></div>
+
+            <div id="adminBootScreen" class="boot-screen admin-boot">
+                <div id="adminBootLines" class="boot-lines admin-boot-lines"></div>
+            </div>
+
             <header class="statusbar">
                 <div class="status-left">
                     <span class="gang-name">Cipher — Admin Tablet</span>
                 </div>
                 <div class="status-right">
-                    <span class="signal">STAFF ACCESS</span>
-                    <button id="adminCloseBtn" class="rail-power" title="Close">⏻</button>
+                    <span class="signal admin-signal">STAFF ACCESS</span>
+                    <button id="adminCloseBtn" class="status-close" title="Close">⏻</button>
                 </div>
             </header>
 
             <main class="admin-surface">
-                <!-- CREATE -->
-                <section class="admin-card">
-                    <h2>New gang</h2>
-                    <div class="admin-form">
-                        <input id="newGangName" type="text" placeholder="name (e.g. ballas)" />
-                        <input id="newGangLabelAdmin" type="text" placeholder="label (e.g. Ballas)" />
-                        <input id="newGangBoss" type="text" placeholder="boss citizenid" />
-                        <button id="adminCreateBtn" class="btn btn-accent">Create</button>
+                <nav class="tabs">
+                    <button class="tab is-active" data-tab="admin-dashboard">Dashboard</button>
+                    <button class="tab" data-tab="admin-gangs">Gangs</button>
+                    <button class="tab" data-tab="admin-zones">Zones</button>
+                    <button class="tab" data-tab="admin-boosting">Boosting</button>
+                    <button class="tab" data-tab="admin-blackmarket">Blackmarket</button>
+                    <button class="tab" data-tab="admin-dealer">Dealer</button>
+                </nav>
+
+                <!-- DASHBOARD -->
+                <div class="tabview is-active" data-tabview="admin-dashboard">
+                    <div class="overview-grid" id="adminStatGrid">
+                        <div class="overview-card"><span class="muted">Gangs</span><div class="overview-stat" id="statGangCount">0</div></div>
+                        <div class="overview-card"><span class="muted">Zones assigned</span><div class="overview-stat" id="statZoneCount">0</div></div>
+                        <div class="overview-card"><span class="muted">Total gang bank</span><div class="overview-stat" id="statGangBank">$0</div></div>
+                        <div class="overview-card"><span class="muted">Boosting players</span><div class="overview-stat" id="statBoostPlayers">0</div></div>
+                        <div class="overview-card"><span class="muted">Cars boosted (all-time)</span><div class="overview-stat" id="statBoostTotal">0</div></div>
+                        <div class="overview-card"><span class="muted">Active boost jobs</span><div class="overview-stat" id="statBoostActive">0</div></div>
+                        <div class="overview-card"><span class="muted">World messages</span><div class="overview-stat" id="statChatMsgs">0</div></div>
+                        <div class="overview-card"><span class="muted">Handles issued</span><div class="overview-stat" id="statHandles">0</div></div>
                     </div>
-                    <div id="adminCreateError" class="form-error"></div>
-                </section>
+                    <h2 style="margin-top:22px;">Dealer status</h2>
+                    <div class="member">
+                        <span class="member-name">Cooldown</span>
+                        <span id="statDealerCooldown" class="member-rank">—</span>
+                    </div>
+                </div>
 
                 <!-- GANGS -->
-                <section class="admin-card">
-                    <h2>Gangs</h2>
-                    <div id="adminGangList" class="admin-gang-list"></div>
-                </section>
+                <div class="tabview" data-tabview="admin-gangs">
+                    <section class="admin-card">
+                        <h2>New gang</h2>
+                        <div class="admin-form">
+                            <input id="newGangName" type="text" placeholder="name (e.g. ballas)" />
+                            <input id="newGangLabelAdmin" type="text" placeholder="label (e.g. Ballas)" />
+                            <input id="newGangBoss" type="text" placeholder="boss citizenid" />
+                            <button id="adminCreateBtn" class="btn btn-accent">Create</button>
+                        </div>
+                        <div id="adminCreateError" class="form-error"></div>
+                    </section>
 
-                <!-- TERRITORY -->
-                <section class="admin-card">
-                    <h2>Zones</h2>
-                    <div class="admin-form">
-                        <input id="newZoneKey" type="text" placeholder="zone key (e.g. grove)" />
-                        <input id="newZoneLabel" type="text" placeholder="label (e.g. Grove Street)" />
-                        <button id="adminCreateZoneBtn" class="btn btn-accent">Create at my position</button>
-                    </div>
-                    <div id="adminTerritoryList" class="admin-gang-list"></div>
-                </section>
+                    <section class="admin-card">
+                        <h2>Gangs</h2>
+                        <div id="adminGangList" class="admin-gang-list"></div>
+                    </section>
+                </div>
+
+                <!-- ZONES -->
+                <div class="tabview" data-tabview="admin-zones">
+                    <section class="admin-card">
+                        <h2>Zones</h2>
+                        <div class="admin-form">
+                            <input id="newZoneKey" type="text" placeholder="zone key (e.g. grove)" />
+                            <input id="newZoneLabel" type="text" placeholder="label (e.g. Grove Street)" />
+                            <button id="adminCreateZoneBtn" class="btn btn-accent">Create at my position</button>
+                        </div>
+                        <div id="adminTerritoryList" class="admin-gang-list"></div>
+                    </section>
+                </div>
+
+                <!-- BOOSTING OVERSIGHT -->
+                <div class="tabview" data-tabview="admin-boosting">
+                    <section class="admin-card">
+                        <h2>Search players</h2>
+                        <div class="admin-form">
+                            <input id="boostSearchInput" type="text" placeholder="name or citizenid (blank = top 25)" />
+                            <button id="boostSearchBtn" class="btn btn-accent">Search</button>
+                        </div>
+                        <div id="boostSearchResults" class="admin-gang-list"></div>
+                    </section>
+                </div>
+
+                <!-- BLACKMARKET MODERATION -->
+                <div class="tabview" data-tabview="admin-blackmarket">
+                    <section class="admin-card">
+                        <h2>Resolve handle</h2>
+                        <div class="admin-form">
+                            <input id="resolveHandleInput" type="text" placeholder="handle (e.g. ShadowFox-A1B2)" />
+                            <button id="resolveHandleBtn" class="btn btn-ghost">Resolve</button>
+                            <span id="resolveHandleResult" class="muted"></span>
+                        </div>
+                    </section>
+
+                    <section class="admin-card">
+                        <h2>Recent world chat</h2>
+                        <div id="chatModList" class="admin-gang-list"></div>
+                    </section>
+                </div>
+
+                <!-- DEALER CONTROL -->
+                <div class="tabview" data-tabview="admin-dealer">
+                    <section class="admin-card">
+                        <div class="row-between">
+                            <h2>Current stock</h2>
+                            <div class="admin-form" style="margin:0;">
+                                <button id="dealerRerollBtn" class="btn btn-ghost">Force reroll</button>
+                                <button id="dealerClearCooldownBtn" class="btn btn-ghost">Clear cooldown</button>
+                            </div>
+                        </div>
+                        <div id="dealerStockList" class="admin-gang-list"></div>
+                    </section>
+                </div>
             </main>
             <div id="adminToastStack" class="toast-stack"></div>
         </div>

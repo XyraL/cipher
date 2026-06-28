@@ -40,9 +40,40 @@
 
     let overview = { gangs: [], territories: [] };
 
+    const ADMIN_BOOT_LINES = [
+        'VERIFYING ACE PERMISSION...',
+        'STAFF CREDENTIALS <span class="ok">[OK]</span>',
+        'LOADING ADMIN MODULES...',
+        'LOCKDOWN OVERRIDE — ACCESS GRANTED',
+    ];
+
+    function playAdminBoot(onDone) {
+        const screen = $('#adminBootScreen');
+        const linesEl = $('#adminBootLines');
+        if (!screen || !linesEl) { onDone && onDone(); return; }
+        linesEl.innerHTML = '';
+        screen.classList.remove('is-hidden');
+        let i = 0;
+        function next() {
+            if (i >= ADMIN_BOOT_LINES.length) {
+                setTimeout(() => { screen.classList.add('is-hidden'); onDone && onDone(); }, 280);
+                return;
+            }
+            const div = document.createElement('div');
+            div.className = 'boot-line';
+            div.innerHTML = ADMIN_BOOT_LINES[i] + (i === ADMIN_BOOT_LINES.length - 1 ? '<span class="boot-cursor"></span>' : '');
+            linesEl.appendChild(div);
+            requestAnimationFrame(() => div.classList.add('is-shown'));
+            i++;
+            setTimeout(next, 200);
+        }
+        next();
+    }
+
     window.openAdminUI = async () => {
         $('#root').classList.add('hidden');
         $('#adminRoot').classList.remove('hidden');
+        playAdminBoot();
         await refresh();
     };
 
@@ -53,6 +84,10 @@
         if (!overview || !overview.gangs) overview = { gangs: [], territories: [] };
         renderGangs();
         renderTerritories();
+        renderDashboard();
+        renderBoostSearch();
+        renderChatMod();
+        renderDealerStock();
     }
 
     function escapeHtml(s) {
@@ -275,4 +310,143 @@
             $('#adminCreateError').textContent = res.error || 'Failed to create gang';
         }
     };
+
+    // ── Dashboard ──
+    async function renderDashboard() {
+        const d = await call('cipher:admin:getDashboard');
+        if (!d) return;
+        $('#statGangCount').textContent = d.gangCount;
+        $('#statZoneCount').textContent = d.zoneCount;
+        $('#statGangBank').textContent = '$' + Number(d.totalGangBank).toLocaleString();
+        $('#statBoostPlayers').textContent = d.boosting.players;
+        $('#statBoostTotal').textContent = d.boosting.totalBoosted;
+        $('#statBoostActive').textContent = d.boosting.activeJobs;
+        $('#statChatMsgs').textContent = d.worldMsgCount;
+        $('#statHandles').textContent = d.handleCount;
+        const cd = $('#statDealerCooldown');
+        if (d.dealer && d.dealer.cooldownMs > 0) {
+            cd.textContent = `${(d.dealer.cooldownMs / 3600000).toFixed(1)}h remaining`;
+        } else {
+            cd.textContent = 'Ready';
+        }
+    }
+
+    // ── Boosting oversight ──
+    async function renderBoostSearch() {
+        const query = $('#boostSearchInput') ? $('#boostSearchInput').value.trim() : '';
+        const rows = await call('cipher:admin:boostSearch', query);
+        const list = $('#boostSearchResults');
+        list.innerHTML = '';
+        if (!rows || !rows.length) { list.innerHTML = '<div class="log-empty">No matches.</div>'; return; }
+
+        rows.forEach((r) => {
+            const row = document.createElement('div');
+            row.className = 'admin-gang-card';
+            row.innerHTML = `
+                <div class="row-between">
+                    <div>
+                        <div class="member-name">${escapeHtml(r.name)} <span class="muted">(${escapeHtml(r.citizenid)})</span></div>
+                        <div class="muted">${r.total_boosted} boosted · $${Number(r.total_cash).toLocaleString()} earned</div>
+                    </div>
+                    <button class="icon-btn danger" data-reset-cid="${r.citizenid}" title="Reset">✕</button>
+                </div>
+                <div class="admin-form">
+                    <input class="b-level" type="number" placeholder="level" value="${r.level}" style="max-width:90px;" />
+                    <input class="b-xp" type="number" placeholder="xp" value="${r.xp}" style="max-width:110px;" />
+                    <input class="b-boosted" type="number" placeholder="total boosted" value="${r.total_boosted}" style="max-width:130px;" />
+                    <input class="b-cash" type="number" placeholder="total cash" value="${r.total_cash}" style="max-width:130px;" />
+                    <input class="b-perks" type="number" placeholder="perk pts" value="${r.perk_points}" style="max-width:100px;" />
+                    <button data-save-cid="${r.citizenid}">Save</button>
+                </div>`;
+            list.appendChild(row);
+        });
+
+        list.querySelectorAll('[data-save-cid]').forEach((btn) => {
+            btn.onclick = async () => {
+                const card = btn.closest('.admin-gang-card');
+                const fields = {
+                    level: Number(card.querySelector('.b-level').value),
+                    xp: Number(card.querySelector('.b-xp').value),
+                    total_boosted: Number(card.querySelector('.b-boosted').value),
+                    total_cash: Number(card.querySelector('.b-cash').value),
+                    perk_points: Number(card.querySelector('.b-perks').value),
+                };
+                await callChecked('Stats saved', 'cipher:admin:boostSetStats', btn.dataset.saveCid, fields);
+                await renderBoostSearch();
+            };
+        });
+        list.querySelectorAll('[data-reset-cid]').forEach((btn) => {
+            btn.onclick = async () => {
+                if (btn.dataset.confirm !== '1') {
+                    btn.dataset.confirm = '1'; btn.textContent = '✔';
+                    setTimeout(() => { btn.dataset.confirm = '0'; btn.textContent = '✕'; }, 3000);
+                    return;
+                }
+                await callChecked('Stats reset', 'cipher:admin:boostResetStats', btn.dataset.resetCid);
+                await renderBoostSearch();
+            };
+        });
+    }
+    if ($('#boostSearchBtn')) $('#boostSearchBtn').onclick = renderBoostSearch;
+
+    // ── Blackmarket moderation ──
+    async function renderChatMod() {
+        const rows = await call('cipher:admin:chatGetWorld');
+        const list = $('#chatModList');
+        list.innerHTML = '';
+        if (!rows || !rows.length) { list.innerHTML = '<div class="log-empty">No messages yet.</div>'; return; }
+
+        [...rows].reverse().forEach((m) => {
+            const row = document.createElement('div');
+            row.className = 'member';
+            row.innerHTML = `
+                <span class="member-name">${escapeHtml(m.handle)}</span>
+                <span class="member-rank">${escapeHtml(m.message)}</span>
+                <div class="member-actions">
+                    <button class="icon-btn danger" data-del-msg="${m.id}" title="Delete">✕</button>
+                </div>`;
+            list.appendChild(row);
+        });
+
+        list.querySelectorAll('[data-del-msg]').forEach((btn) => {
+            btn.onclick = async () => {
+                await callChecked('Message deleted', 'cipher:admin:chatDeleteWorld', btn.dataset.delMsg);
+                await renderChatMod();
+            };
+        });
+    }
+    if ($('#resolveHandleBtn')) {
+        $('#resolveHandleBtn').onclick = async () => {
+            const handle = $('#resolveHandleInput').value.trim();
+            if (!handle) return;
+            const res = await call('cipher:admin:chatResolveHandle', handle);
+            $('#resolveHandleResult').textContent = res.ok ? `→ ${res.citizenid}` : (res.error || 'not found');
+        };
+    }
+
+    // ── Dealer control ──
+    async function renderDealerStock() {
+        const stock = await call('cipher:admin:dealerGetStock');
+        const list = $('#dealerStockList');
+        list.innerHTML = '';
+        if (!stock || !stock.length) { list.innerHTML = '<div class="log-empty">No stock rolled yet.</div>'; return; }
+        stock.forEach((s) => {
+            const row = document.createElement('div');
+            row.className = 'member';
+            row.innerHTML = `<span class="member-name">${escapeHtml(s.label)}</span><span class="member-rank">$${Number(s.price).toLocaleString()}</span>`;
+            list.appendChild(row);
+        });
+    }
+    if ($('#dealerRerollBtn')) {
+        $('#dealerRerollBtn').onclick = async () => {
+            await callChecked('Stock rerolled', 'cipher:admin:dealerReroll');
+            await renderDealerStock();
+        };
+    }
+    if ($('#dealerClearCooldownBtn')) {
+        $('#dealerClearCooldownBtn').onclick = async () => {
+            await callChecked('Cooldown cleared', 'cipher:admin:dealerClearCooldown');
+            await renderDashboard();
+        };
+    }
 })();

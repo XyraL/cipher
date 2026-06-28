@@ -83,14 +83,39 @@ apps (Dark Web Market, Contracts Board, etc.) by registering them in
   treasury, activity log. The activity log now also covers tasks
   started/completed, drug sales, dealer calls/purchases, and crafting — not
   just membership/bank/placement events.
-- Blackmarket app: a second app in the device, open to anyone holding the
-  tablet (gang or not). Every character gets a persistent, anonymous handle
-  (e.g. `ShadowFox-A1B2`) the first time they post — never tied to gang
-  label, so even gang affiliation stays hidden. A shared world feed
-  (`Config.Chat.worldHistoryLimit` messages kept) plus DMs addressed by
-  handle, since that's the only identity anyone has; the server is the only
-  thing that ever maps a handle back to a citizenid. Live-delivered if
-  you're online, persisted either way.
+- Blackmarket app: anonymous world chat + handle-addressed DMs. **Requires
+  being in a gang** — the app doesn't even show in the rail otherwise (this
+  is enforced server-side too, not just hidden in the UI). Every character
+  gets a persistent, custom-editable anonymous handle (e.g. `ShadowFox-A1B2`,
+  ✎ to rename) — never tied to gang label, so even affiliation stays hidden.
+  A shared world feed (`Config.Chat.worldHistoryLimit` messages kept) plus
+  DMs addressed by handle, since that's the only identity anyone has — the
+  server is the only thing that ever resolves a handle to a citizenid.
+  Live-delivered if you're online, persisted either way.
+- Boosting app: car theft, **open to everyone** regardless of gang
+  membership — the one app that isn't gated, and fully standalone (no
+  gang rep, no gang tie-in of any kind — see `server/boosting.lua`).
+  Personal level + XP only this system tracks (`cipher_boost_stats`).
+  `Config.Boosting.levels` is a cumulative tier list: at level N you can
+  be assigned any vehicle from levels 1..N, each picking a random spot
+  from its own `spawns` list. No custom lockpick/hotwire minigame here —
+  the vehicle spawns locked with no owner/keys, and qbx_core's own
+  vehicle break-in/hotwire system handles the actual theft; we just watch
+  for the engine to actually start. Once it does, that fires an optional
+  police dispatch hook (`Config.Boosting.dispatch` — disabled by default,
+  the event/payload shape is just an example for `cd_dispatch` and needs
+  adjusting to whatever dispatch resource you actually run). Bring the
+  car to the drop-off, get out, and sell it to the buyer ped — validated
+  by the vehicle's actual position, not the player's, so you can't just
+  walk up without it. `Config.Boosting.guards` spawns armed hostiles near
+  the target vehicle while you steal it — a friend can fight them off
+  while you work. `Config.Boosting.wanted` keeps several bonus-paying
+  "wanted" vehicles active at once (refreshed on `rotateMinutes`, not a
+  rare one-off), available at any level alongside the normal pool. The
+  Job tab shows those wanted vehicles, a preview of what you might get at
+  your level, and a server-wide recent-sells feed; a Badges tab tracks
+  config-defined milestones (`Config.Boosting.achievements`); a
+  Leaderboard tab ranks the top 10 by lifetime cars boosted.
 
 ## Admin tablet
 Staff manage gangs in-game instead of editing config.lua/the DB by hand:

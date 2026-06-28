@@ -210,6 +210,8 @@ local function setupDropoffTarget(coords, model)
     end
 end
 
+-- Car boosting is its own standalone system now — see client/boosting.lua.
+
 RegisterNetEvent('cipher:client:taskUpdate', function(job)
     clearTaskBlip()
     if not job then

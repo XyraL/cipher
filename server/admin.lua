@@ -337,6 +337,84 @@ lib.callback.register('cipher:admin:deleteZone', guarded(function(src, zone)
     return { ok = ok, error = err }
 end))
 
+-- ── boosting oversight ──
+lib.callback.register('cipher:admin:boostSearch', guarded(function(src, query)
+    return Boosting.AdminSearch(query)
+end))
+
+lib.callback.register('cipher:admin:boostSetStats', guarded(function(src, citizenid, fields)
+    local ok, err = Boosting.AdminSetStats(citizenid, fields or {})
+    if ok then logAdmin(src, 'Boosting stats edited', ('%s — %s'):format(citizenid, json.encode(fields or {})), Discord.Color.warn) end
+    return { ok = ok, error = err }
+end))
+
+lib.callback.register('cipher:admin:boostResetStats', guarded(function(src, citizenid)
+    local ok, err = Boosting.AdminResetStats(citizenid)
+    if ok then logAdmin(src, 'Boosting stats reset', citizenid, Discord.Color.bad) end
+    return { ok = ok, error = err }
+end))
+
+lib.callback.register('cipher:admin:boostDashboard', guarded(function(src)
+    return Boosting.AdminGetDashboard()
+end))
+
+-- ── blackmarket moderation ──
+lib.callback.register('cipher:admin:chatGetWorld', guarded(function(src)
+    return Chat.GetWorldHistoryAdmin()
+end))
+
+lib.callback.register('cipher:admin:chatDeleteWorld', guarded(function(src, id)
+    local ok, err = Chat.DeleteWorldMessage(tonumber(id))
+    if ok then logAdmin(src, 'Chat message deleted', ('id #%s'):format(tostring(id)), Discord.Color.bad) end
+    return { ok = ok, error = err }
+end))
+
+lib.callback.register('cipher:admin:chatResolveHandle', guarded(function(src, handle)
+    local citizenid = Chat.ResolveHandle(handle)
+    if not citizenid then return { ok = false, error = 'no one with that handle' } end
+    logAdmin(src, 'Handle resolved', ('%s -> %s'):format(handle, citizenid), Discord.Color.info)
+    return { ok = true, citizenid = citizenid }
+end))
+
+-- ── dealer control ──
+lib.callback.register('cipher:admin:dealerGetStock', guarded(function(src)
+    return Dealer.GetStock()
+end))
+
+lib.callback.register('cipher:admin:dealerReroll', guarded(function(src)
+    Dealer.ForceReroll()
+    logAdmin(src, 'Dealer stock rerolled', '', Discord.Color.info)
+    return { ok = true }
+end))
+
+lib.callback.register('cipher:admin:dealerClearCooldown', guarded(function(src)
+    Dealer.ClearCooldown()
+    logAdmin(src, 'Dealer cooldown cleared', '', Discord.Color.info)
+    return { ok = true }
+end))
+
+lib.callback.register('cipher:admin:dealerGetStatus', guarded(function(src)
+    return Dealer.GetStatus()
+end))
+
+-- ── server-wide dashboard ──
+lib.callback.register('cipher:admin:getDashboard', guarded(function(src)
+    local gangCount = MySQL.scalar.await('SELECT COUNT(*) FROM cipher_gangs') or 0
+    local zoneCount = MySQL.scalar.await('SELECT COUNT(*) FROM cipher_territories WHERE gang_id IS NOT NULL') or 0
+    local totalBank = MySQL.scalar.await('SELECT COALESCE(SUM(bank),0) FROM cipher_gangs') or 0
+    local worldMsgCount = MySQL.scalar.await('SELECT COUNT(*) FROM cipher_chat_world') or 0
+    local handleCount = MySQL.scalar.await('SELECT COUNT(*) FROM cipher_chat_handles') or 0
+    return {
+        gangCount = gangCount,
+        zoneCount = zoneCount,
+        totalGangBank = totalBank,
+        worldMsgCount = worldMsgCount,
+        handleCount = handleCount,
+        boosting = Boosting.AdminGetDashboard(),
+        dealer = Dealer.GetStatus(),
+    }
+end))
+
 RegisterCommand(Config.AdminCommand, function(src)
     if src == 0 then return end -- console
     if not isAdmin(src) then

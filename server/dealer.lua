@@ -41,6 +41,15 @@ function Dealer.GetStock()
     return stock
 end
 
+-- ── admin control ──
+function Dealer.ForceReroll()
+    rollStock()
+end
+
+function Dealer.ClearCooldown()
+    lastContactAt = 0
+end
+
 function Dealer.Buy(src, item)
     local entry = nil
     for _, s in ipairs(stock) do if s.item == item then entry = s break end end

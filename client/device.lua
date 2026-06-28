@@ -67,6 +67,20 @@ local allowed = {
     ['cipher:chat:getThreads']         = true,
     ['cipher:chat:getThread']          = true,
     ['cipher:chat:sendDM']             = true,
+    ['cipher:boosting:getStatus']      = true,
+    ['cipher:boosting:getLeaderboard'] = true,
+    ['cipher:boosting:accept']         = true,
+    ['cipher:boosting:cancel']         = true,
+    ['cipher:boosting:getAvailableVehicles'] = true,
+    ['cipher:boosting:getRecentActivity']    = true,
+    ['cipher:boosting:getAchievements']      = true,
+    ['cipher:boosting:getWanted']            = true,
+    ['cipher:boosting:getPerks']             = true,
+    ['cipher:boosting:buyPerk']              = true,
+    ['cipher:boosting:getCrewStatus']        = true,
+    ['cipher:boosting:inviteCoop']           = true,
+    ['cipher:boosting:cancelCrew']           = true,
+    ['cipher:boosting:acceptCoop']           = true,
 }
 
 -- Live chat pushes (not request/response, so they bypass the relay above

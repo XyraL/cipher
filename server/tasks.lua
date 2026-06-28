@@ -9,6 +9,8 @@
 -- server only accepts that report after a sane minimum time has passed.
 -- That's a real trust concession (the client could lie about the kill),
 -- bounded by minKillSeconds plus the existing cooldown/time-limit system.
+-- (Car boosting is its own standalone system — see server/boosting.lua —
+-- not a task type, since it has no gang/rep tie-in at all.)
 -- ─────────────────────────────────────────────────────────────
 Tasks = {}
 

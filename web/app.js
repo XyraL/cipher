@@ -41,12 +41,44 @@ document.addEventListener('keydown', (e) => {
     else nui('escape');
 });
 
+const BOOT_LINES = [
+    'INITIALIZING SECURE LINK...',
+    'DECRYPTING HANDSHAKE...',
+    'LOADING MODULES <span class="ok">[OK]</span>',
+    'ACCESS GRANTED',
+];
+
+function playBootSequence(onDone) {
+    const screen = $('#bootScreen');
+    const linesEl = $('#bootLines');
+    if (!screen || !linesEl) { onDone && onDone(); return; }
+    linesEl.innerHTML = '';
+    screen.classList.remove('is-hidden');
+
+    let i = 0;
+    function next() {
+        if (i >= BOOT_LINES.length) {
+            setTimeout(() => { screen.classList.add('is-hidden'); onDone && onDone(); }, 280);
+            return;
+        }
+        const div = document.createElement('div');
+        div.className = 'boot-line';
+        div.innerHTML = BOOT_LINES[i] + (i === BOOT_LINES.length - 1 ? '<span class="boot-cursor"></span>' : '');
+        linesEl.appendChild(div);
+        requestAnimationFrame(() => div.classList.add('is-shown'));
+        i++;
+        setTimeout(next, 220);
+    }
+    next();
+}
+
 function openUI(snapshot) {
     state.snapshot = snapshot;
     $('#root').classList.remove('hidden');
     renderApps(snapshot.apps || []);
     tickClock();
     switchApp(state.activeApp || (state.apps[0] && state.apps[0].id));
+    playBootSequence();
 }
 
 function closeUI() {
@@ -76,7 +108,7 @@ function renderApps(apps) {
     apps.forEach((app) => {
         const b = document.createElement('button');
         b.className = 'app-btn' + (app.id === state.activeApp ? ' is-active' : '');
-        b.textContent = app.label.slice(0, 2).toUpperCase();
+        b.innerHTML = `<i class="fas fa-${app.icon || 'square'}"></i><span>${escapeHtml(app.label)}</span>`;
         b.title = app.label;
         b.onclick = () => switchApp(app.id);
         rail.appendChild(b);
@@ -92,6 +124,9 @@ function switchApp(appId) {
     if (appId === 'blackmarket') {
         showView('viewBlackmarket');
         renderBlackmarket();
+    } else if (appId === 'boosting') {
+        showView('viewBoosting');
+        renderBoosting();
     } else {
         render(); // gangops decides viewFound vs viewGang itself
     }
@@ -148,7 +183,17 @@ function renderOverview(g) {
 
 function showView(id) {
     el('.view').forEach((v) => v.classList.add('hidden'));
-    $('#' + id).classList.remove('hidden');
+    const target = $('#' + id);
+    target.classList.remove('hidden');
+    playGlitch(target);
+}
+
+// Re-triggers the glitch-in animation reliably even if the class is
+// already present (force a reflow between remove/add).
+function playGlitch(el) {
+    el.classList.remove('glitch-in');
+    void el.offsetWidth;
+    el.classList.add('glitch-in');
 }
 
 // ── roster ──
@@ -310,25 +355,38 @@ async function renderUnlocks() {
     });
 }
 
-// ── tasks ──
-async function renderTasks() {
-    const res = await call('cipher:tasks:getAvailable');
-    const tasks = (res && res.tasks) || [];
-    const activeJob = res && res.active;
-    const list = $('#taskList');
-    list.innerHTML = '';
+// ── tasks (shared rendering for both the Gang Ops Tasks tab and the
+// standalone Boosting app — they just show different subsets) ──
+function taskRewardLabel(t) {
+    const parts = [];
+    if (t.cashReward) parts.push(`+$${t.cashReward}`);
+    if (t.reward) parts.push(`+${t.reward} rep`);
+    return parts.join(', ') || '—';
+}
 
-    $('#cancelTaskBtn').classList.toggle('hidden', !activeJob);
+async function renderTaskList(listEl, cancelBtnEl, typeFilter) {
+    const res = await call('cipher:tasks:getAvailable');
+    const allTasks = (res && res.tasks) || [];
+    const tasks = allTasks.filter((t) => typeFilter(t.type));
+    const activeJob = res && res.active;
+    listEl.innerHTML = '';
+
+    const activeMatchesThisList = activeJob && allTasks.some((t) => t.id === activeJob.id && typeFilter(t.type));
+    cancelBtnEl.classList.toggle('hidden', !activeMatchesThisList);
 
     if (activeJob) {
+        if (!activeMatchesThisList) {
+            listEl.innerHTML = '<div class="log-empty">You\'re busy with a job elsewhere on the tablet.</div>';
+            return;
+        }
         const row = document.createElement('div');
         row.className = 'member';
         row.innerHTML = `<span class="member-name">On the job — ${escapeHtml(activeJob.stage)}</span>`;
-        list.appendChild(row);
+        listEl.appendChild(row);
         return;
     }
 
-    if (!tasks.length) { list.innerHTML = '<div class="log-empty">No jobs configured.</div>'; return; }
+    if (!tasks.length) { listEl.innerHTML = '<div class="log-empty">No jobs configured.</div>'; return; }
 
     tasks.forEach((t) => {
         const onCooldown = t.cooldownMs > 0;
@@ -337,29 +395,278 @@ async function renderTasks() {
         const mins = Math.ceil(t.cooldownMs / 60000);
         row.innerHTML = `
             <span class="member-name">${escapeHtml(t.label)}</span>
-            <span class="member-rank">+${t.reward} rep</span>
+            <span class="member-rank">${taskRewardLabel(t)}</span>
             <div class="member-actions">
                 <button class="btn btn-ghost" data-task="${t.id}" ${onCooldown ? 'disabled' : ''}>
                     ${onCooldown ? `Cooldown ${mins}m` : 'Accept'}
                 </button>
             </div>`;
-        list.appendChild(row);
+        listEl.appendChild(row);
     });
 
-    list.querySelectorAll('[data-task]').forEach((btn) => {
+    listEl.querySelectorAll('[data-task]').forEach((btn) => {
         btn.onclick = async () => {
             const res = await call('cipher:tasks:accept', btn.dataset.task);
             if (res.ok) { flash('Job accepted — check your map.', 'success'); nui('close'); }
             else flash(res.error || 'Failed', 'error');
-            await renderTasks();
+            await renderTaskList(listEl, cancelBtnEl, typeFilter);
         };
     });
 }
 
+async function renderTasks() {
+    await renderTaskList($('#taskList'), $('#cancelTaskBtn'), () => true);
+}
 $('#cancelTaskBtn').onclick = async () => {
     await call('cipher:tasks:cancel');
     await renderTasks();
 };
+
+// ── Car boosting (fully standalone — no gang tie-in) ──
+async function renderBoosting() {
+    const status = await call('cipher:boosting:getStatus');
+    if (!status) return;
+
+    $('#boostLevelNum').textContent = status.level;
+    $('#boostLevelLabel').textContent = status.label;
+    $('#boostTotalCount').textContent = status.totalBoosted;
+    $('#boostTotalCash').textContent = '$' + Number(status.totalCash).toLocaleString();
+
+    if (status.xpNeeded == null) {
+        $('#boostXpFill').style.width = '100%';
+        $('#boostXpLabel').textContent = `${status.xp.toLocaleString()} XP — max level`;
+    } else {
+        const pct = Math.min(100, (status.xp / status.xpNeeded) * 100);
+        $('#boostXpFill').style.width = pct + '%';
+        $('#boostXpLabel').textContent = `${status.xp.toLocaleString()} / ${status.xpNeeded.toLocaleString()} XP to next level`;
+    }
+
+    const btn = $('#boostActionBtn');
+    const cancelBtn = $('#cancelBoostBtn');
+    const activeEl = $('#boostActiveStatus');
+
+    if (status.active) {
+        const job = status.active;
+        const coopTag = job.coop ? ' [CO-OP]' : '';
+        if (job.stage === 'theft' && job.vehicleDef) {
+            activeEl.innerHTML = `BOLO${coopTag} — <strong>${escapeHtml(job.vehicleDef.label || job.vehicleDef.model)}</strong>, plate <strong>${escapeHtml(job.plate || '?')}</strong>. Search the marked zone.`;
+        } else {
+            activeEl.textContent = `On the job${coopTag} — ${job.stage}`;
+        }
+        activeEl.classList.remove('hidden');
+        btn.classList.add('hidden');
+        cancelBtn.classList.remove('hidden');
+    } else {
+        activeEl.classList.add('hidden');
+        cancelBtn.classList.add('hidden');
+        btn.classList.remove('hidden');
+        if (status.cooldownMs > 0) {
+            const mins = Math.ceil(status.cooldownMs / 60000);
+            btn.textContent = `Cooldown ${mins}m`;
+            btn.disabled = true;
+        } else {
+            btn.textContent = 'Start Job';
+            btn.disabled = false;
+        }
+    }
+
+    await renderBoostLeaderboard();
+    await renderBoostVehiclePreview();
+    await renderBoostActivity();
+    await renderBoostWanted(status);
+    await renderBoostBadges();
+    await renderBoostPerks();
+    await renderBoostCrew(status);
+}
+
+async function renderBoostCrew(status) {
+    const crew = await call('cipher:boosting:getCrewStatus');
+    const list = $('#boostCrewList');
+    const startBtn = $('#boostStartCoopBtn');
+    const cancelBtn = $('#boostCancelCrewBtn');
+    const inviteBtn = $('#boostInviteBtn');
+    list.innerHTML = '';
+
+    if (!crew) {
+        list.innerHTML = '<div class="log-empty">No crew yet — invite someone to start a co-op job.</div>';
+        startBtn.classList.add('hidden');
+        cancelBtn.classList.add('hidden');
+        inviteBtn.disabled = !!status.active;
+        return;
+    }
+
+    Object.values(crew.members).forEach((name) => {
+        const row = document.createElement('div');
+        row.className = 'member';
+        row.innerHTML = `<span class="member-name">${escapeHtml(name)}</span>`;
+        list.appendChild(row);
+    });
+
+    if (crew.isLeader) {
+        startBtn.classList.toggle('hidden', crew.size < 2 || !!status.active);
+        cancelBtn.classList.remove('hidden');
+        inviteBtn.disabled = crew.size >= crew.maxSize || !!status.active;
+    } else {
+        startBtn.classList.add('hidden');
+        cancelBtn.classList.add('hidden');
+        inviteBtn.disabled = true;
+    }
+}
+
+$('#boostInviteBtn').onclick = async () => {
+    const id = $('#boostInviteId').value;
+    if (!id) return;
+    const res = await call('cipher:boosting:inviteCoop', Number(id));
+    $('#boostInviteId').value = '';
+    if (res.ok) flash('Invite sent', 'success');
+    else flash(res.error || 'Failed', 'error');
+    await renderBoosting();
+};
+$('#boostCancelCrewBtn').onclick = async () => {
+    await call('cipher:boosting:cancelCrew');
+    await renderBoosting();
+};
+$('#boostStartCoopBtn').onclick = async () => {
+    const res = await call('cipher:boosting:acceptCoop');
+    if (res.ok) { flash('Co-op job started — check your map.', 'success'); nui('close'); }
+    else flash(res.error || 'Failed', 'error');
+    await renderBoosting();
+};
+
+async function renderBoostPerks() {
+    const res = await call('cipher:boosting:getPerks');
+    const perks = (res && res.perks) || [];
+    $('#boostPerkPoints').textContent = (res && res.perkPoints) || 0;
+    const list = $('#boostPerkList');
+    list.innerHTML = '';
+    if (!perks.length) { list.innerHTML = '<div class="log-empty">No perks configured.</div>'; return; }
+
+    perks.forEach((p) => {
+        const row = document.createElement('div');
+        row.className = 'member' + (p.owned ? '' : !p.affordable ? ' is-locked' : '');
+        const action = p.owned
+            ? '<span class="member-rank">Owned</span>'
+            : `<button class="btn btn-ghost" data-perk="${p.id}" ${p.affordable ? '' : 'disabled'}>Buy (${p.cost})</button>`;
+        row.innerHTML = `
+            <span class="member-name">${escapeHtml(p.label)}</span>
+            <span class="member-rank">${escapeHtml(p.description)}</span>
+            <div class="member-actions">${action}</div>`;
+        list.appendChild(row);
+    });
+
+    list.querySelectorAll('[data-perk]').forEach((btn) => {
+        btn.onclick = async () => {
+            const res2 = await call('cipher:boosting:buyPerk', btn.dataset.perk);
+            if (res2.ok) flash('Perk bought', 'success');
+            else flash(res2.error || 'Failed', 'error');
+            await renderBoostPerks();
+        };
+    });
+}
+
+async function renderBoostWanted(status) {
+    const wanted = await call('cipher:boosting:getWanted');
+    const section = $('#boostWantedSection');
+    const list = $('#boostWantedList');
+    list.innerHTML = '';
+
+    if (!wanted || !wanted.length) { section.classList.add('hidden'); return; }
+    section.classList.remove('hidden');
+
+    const blocked = !!status.active || status.cooldownMs > 0;
+    wanted.forEach((w) => {
+        const row = document.createElement('div');
+        row.className = 'member is-wanted';
+        row.innerHTML = `
+            <span class="member-name">${escapeHtml(w.label)}</span>
+            <span class="member-rank">+$${Number(w.cash).toLocaleString()}, +${w.xp} XP</span>
+            <div class="member-actions">
+                <button class="btn btn-accent" data-wanted="${w.id}" ${blocked ? 'disabled' : ''}>Steal</button>
+            </div>`;
+        list.appendChild(row);
+    });
+
+    list.querySelectorAll('[data-wanted]').forEach((btn) => {
+        btn.onclick = async () => {
+            const res = await call('cipher:boosting:accept', btn.dataset.wanted);
+            if (res.ok) { flash('Job started — check your map.', 'success'); nui('close'); }
+            else flash(res.error || 'Failed', 'error');
+            await renderBoosting();
+        };
+    });
+}
+
+async function renderBoostBadges() {
+    const badges = await call('cipher:boosting:getAchievements');
+    const list = $('#boostBadgeList');
+    list.innerHTML = '';
+    if (!badges || !badges.length) { list.innerHTML = '<div class="log-empty">No badges configured.</div>'; return; }
+    badges.forEach((b) => {
+        const row = document.createElement('div');
+        row.className = 'member' + (b.earned ? '' : ' is-locked');
+        row.innerHTML = `
+            <span class="member-name">${b.earned ? '🏆' : '🔒'} ${escapeHtml(b.label)}</span>
+            <span class="member-rank">${escapeHtml(b.description)}</span>`;
+        list.appendChild(row);
+    });
+}
+
+async function renderBoostVehiclePreview() {
+    const vehicles = await call('cipher:boosting:getAvailableVehicles');
+    const list = $('#boostVehiclePreview');
+    list.innerHTML = '';
+    if (!vehicles || !vehicles.length) { list.innerHTML = '<div class="log-empty">Nothing unlocked yet.</div>'; return; }
+    vehicles.forEach((v) => {
+        const row = document.createElement('div');
+        row.className = 'member';
+        row.innerHTML = `
+            <span class="member-name">${escapeHtml(v.label)}</span>
+            <span class="member-rank">+$${Number(v.cash).toLocaleString()}, +${v.xp} XP</span>`;
+        list.appendChild(row);
+    });
+}
+
+async function renderBoostActivity() {
+    const rows = await call('cipher:boosting:getRecentActivity');
+    const list = $('#boostActivityFeed');
+    list.innerHTML = '';
+    if (!rows || !rows.length) { list.innerHTML = '<div class="log-empty">No sells yet.</div>'; return; }
+    rows.forEach((r) => {
+        const item = document.createElement('div');
+        item.className = 'log-item';
+        item.innerHTML = `<span class="log-time">${formatTime(r.created_at)}</span><span>${escapeHtml(r.name)} sold a ${escapeHtml(r.vehicle_label)} for $${Number(r.cash).toLocaleString()}</span>`;
+        list.appendChild(item);
+    });
+}
+
+$('#boostActionBtn').onclick = async () => {
+    const res = await call('cipher:boosting:accept');
+    if (res.ok) { flash('Job started — check your map.', 'success'); nui('close'); }
+    else flash(res.error || 'Failed', 'error');
+    await renderBoosting();
+};
+$('#cancelBoostBtn').onclick = async () => {
+    await call('cipher:boosting:cancel');
+    await renderBoosting();
+};
+
+async function renderBoostLeaderboard() {
+    const rows = await call('cipher:boosting:getLeaderboard');
+    const list = $('#boostLeaderboard');
+    list.innerHTML = '';
+    if (!rows || !rows.length) { list.innerHTML = '<div class="log-empty">No one\'s boosted anything yet.</div>'; return; }
+    rows.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'member';
+        row.innerHTML = `
+            <span class="member-grade">#${i + 1}</span>
+            <span class="member-name">${escapeHtml(r.name)}</span>
+            <span class="member-rank">Lvl ${r.level}</span>
+            <span class="member-rank">${r.total_boosted} boosted</span>
+            <span class="member-rank" title="Badges earned">🏆 ${r.badges || 0}</span>`;
+        list.appendChild(row);
+    });
+}
 
 // ── dealer ──
 async function renderDealer() {
@@ -384,12 +691,34 @@ $('#callDealerBtn').onclick = async () => {
 // ── tabs ── (scoped to the enclosing .view so two apps' tabs never collide)
 el('.tab').forEach((tab) => {
     tab.onclick = () => {
-        const scope = tab.closest('.view') || document;
+        const scope = tab.closest('.view, .admin-surface') || document;
         scope.querySelectorAll('.tab').forEach((t) => t.classList.remove('is-active'));
         scope.querySelectorAll('.tabview').forEach((v) => v.classList.remove('is-active'));
+        scope.querySelectorAll('.tab-more').forEach((m) => { m.classList.remove('has-active', 'is-open'); m.querySelector('.tab-more-menu').classList.add('hidden'); });
         tab.classList.add('is-active');
-        scope.querySelector(`[data-tabview="${tab.dataset.tab}"]`).classList.add('is-active');
+        const targetView = scope.querySelector(`[data-tabview="${tab.dataset.tab}"]`);
+        targetView.classList.add('is-active');
+        playGlitch(targetView);
+        const moreParent = tab.closest('.tab-more');
+        if (moreParent) moreParent.classList.add('has-active');
     };
+});
+
+// ── "More" tab dropdowns ──
+el('.tab-more-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        const wrap = btn.closest('.tab-more');
+        const isOpen = wrap.classList.contains('is-open');
+        document.querySelectorAll('.tab-more').forEach((m) => { m.classList.remove('is-open'); m.querySelector('.tab-more-menu').classList.add('hidden'); });
+        if (!isOpen) {
+            wrap.classList.add('is-open');
+            wrap.querySelector('.tab-more-menu').classList.remove('hidden');
+        }
+    };
+});
+document.addEventListener('click', () => {
+    document.querySelectorAll('.tab-more.is-open').forEach((m) => { m.classList.remove('is-open'); m.querySelector('.tab-more-menu').classList.add('hidden'); });
 });
 
 // ── helpers ──

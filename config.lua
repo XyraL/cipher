@@ -213,6 +213,8 @@ Config.TierUnlocks = {
 -- type = 'kill': server picks a random spawnPoints entry, client spawns an
 --   armed hostile NPC there and reports back when it's dead. The server
 --   only trusts that report after minKillSeconds.
+-- (Car boosting is NOT a task type — it's a fully separate system with its
+-- own levels/XP/leaderboard, independent of gangs. See Config.Boosting.)
 -- ─────────────────────────────────────────────────────────────
 Config.Tasks = {
     {
@@ -259,6 +261,196 @@ Config.Tasks = {
         cooldownMinutes = 30,
         timeLimitSeconds = 600,
         minKillSeconds = 5, -- reject a "target down" report faster than this — clearly not legit
+    },
+}
+
+-- ─────────────────────────────────────────────────────────────
+-- Car boosting
+-- Fully standalone: no gang, no gang rep, open to everyone. Personal XP
+-- and a level only this system cares about. Each level has its own
+-- `vehicles` pool; at level N you can be assigned any vehicle from levels
+-- 1..N (cumulative — higher levels don't lose access to earlier cars).
+-- Completing a boost always pays `cash` for that specific vehicle and
+-- grants `xp` toward the next level. The leaderboard ranks by lifetime
+-- cars boosted, not level or cash.
+--
+-- Each vehicle's `spawns` is a list — one is picked at random each time,
+-- so the same car doesn't always show up in the same spot. Add as many
+-- as you want per vehicle; one is fine to start.
+--
+-- Placeholders — pick real model names (verify with /testmodel) and real
+-- spots on your map before relying on any of this.
+-- ─────────────────────────────────────────────────────────────
+Config.Boosting = {
+    enabled = true,
+    -- One is picked at random per job — confirmed ground-level by user testing.
+    dropoffs = {
+        vec4(718.0250, -1084.7808, 22.3153, 93.0969),
+        vec4(-733.6343, -286.6304, 36.9487, 266.3384),
+        vec4(-1223.1425, -704.7170, 22.5838, 326.9461),
+    },
+    dropoffRadius = 15.0,    -- bring the stolen vehicle within this range of the buyer ped
+    -- No custom lockpick/hotwire minigame here — the vehicle just spawns
+    -- locked with no owner/keys, and qbx_core's own vehicle break-in/hotwire
+    -- system handles the actual theft. We just watch for the engine to
+    -- actually start (however it gets there) and move on to the drop-off.
+    --
+    -- No exact waypoint to the car — the tablet shows a search-zone circle
+    -- plus the model + plate as a BOLO-style clue, and you have to actually
+    -- drive around and spot it. Guards don't spawn until you get close, so
+    -- the search phase itself is guard-free.
+    searchRadius = 150.0,
+    guardTriggerRadius = 20.0,
+    cooldownMinutes = 10,
+    timeLimitSeconds = 480,
+    cashAccount = 'cash',
+    -- g_m_y_lost_01 confirmed valid via /testmodel — the buyer you hand the car to at drop-off.
+    buyerPedModel = 'g_m_y_lost_01',
+    recentActivityLimit = 10,
+
+    -- Extra confirmed-ground-level spots, shared across every vehicle below
+    -- for spawn variety — which specific car lands at which spot doesn't
+    -- matter mechanically, so they're just pooled rather than tied 1:1.
+    extraSpawns = {
+        vec4(-1173.4260, -1387.2906, 4.2710, 124.7875),
+        vec4(-810.3212, -1290.9629, 4.3935, 350.7089),
+        vec4(-423.9217, -30.6549, 45.6205, 356.8702),
+        vec4(-101.1543, -57.3651, 55.7671, 256.1645),
+        vec4(195.9602, -250.7542, 65.1311, 70.3728),
+        vec4(872.9670, -46.2850, 78.1578, 236.3890),
+    },
+
+    -- cooldownMinutes per level overrides the global one above — leave it
+    -- off a level to just inherit the global default. perkPoints is
+    -- awarded once, the moment you cross into that level.
+    levels = {
+        {
+            level = 1, label = 'Joyrider', xpNeeded = 0, perkPoints = 1,
+            vehicles = {
+                { model = 'blista', label = 'Blista', spawns = { vec4(-44.0, -1752.0, 29.4, 230.0) }, cash = 600, xp = 15 },
+                -- confirmed ground-level by user testing.
+                { model = 'asea', label = 'Asea', spawns = { vec4(1188.0234, -1287.5217, 34.5036, 264.1924) }, cash = 500, xp = 12 },
+            },
+        },
+        {
+            level = 2, label = 'Wheelman', xpNeeded = 100, cooldownMinutes = 8, perkPoints = 1,
+            vehicles = {
+                { model = 'sultan', label = 'Sultan', spawns = { vec4(425.0, -979.0, 30.7, 0.0) }, cash = 1200, xp = 22 },
+            },
+        },
+        {
+            level = 3, label = 'Pro', xpNeeded = 300, cooldownMinutes = 6, perkPoints = 2,
+            vehicles = {
+                { model = 'sultanrs', label = 'Sultan RS', spawns = { vec4(-1037.0, -2737.0, 20.2, 0.0) }, cash = 2200, xp = 35 },
+            },
+        },
+    },
+
+    -- Perks: passive, permanent unlocks bought with perk_points (never
+    -- consumed/used-up, no inventory items involved). Each `type` is a
+    -- modifier the server applies at the relevant moment:
+    --   cash_bonus_pct        — +value% on every sale's cash payout
+    --   guard_reduction       — -value guards spawned per job (floor 0)
+    --   dispatch_delay        — dispatch fires `value` seconds after the
+    --                           theft instead of instantly (more time to flee)
+    --   cooldown_reduction_pct — -value% off your current cooldown (stacks
+    --                           with the level-based cooldown above)
+    perks = {
+        { id = 'fence_connections', label = 'Fence Connections', description = '+10% cash on every sale',
+          cost = 1, type = 'cash_bonus_pct', value = 10 },
+        { id = 'fence_connections_2', label = 'Better Fence Connections', description = 'Another +15% cash on every sale',
+          cost = 2, type = 'cash_bonus_pct', value = 15 },
+        { id = 'thin_the_crowd', label = 'Thin the Crowd', description = '-1 guard near every target vehicle',
+          cost = 1, type = 'guard_reduction', value = 1 },
+        { id = 'ghost_protocol', label = 'Ghost Protocol', description = 'Removes guards near target vehicles entirely',
+          cost = 2, type = 'guard_reduction', value = 99 },
+        { id = 'signal_jammer', label = 'Signal Jammer', description = 'Delays the police dispatch alert by 20s after a theft',
+          cost = 2, type = 'dispatch_delay', value = 20 },
+        { id = 'quick_fingers', label = 'Quick Fingers', description = '-20% cooldown between jobs',
+          cost = 1, type = 'cooldown_reduction_pct', value = 20 },
+    },
+
+    -- Police dispatch hook: fires the moment a hotwire succeeds (the theft
+    -- itself), client-side, since most dispatch resources expect to be
+    -- triggered with the calling player's own context. The event
+    -- name/payload below is just an example shaped for cd_dispatch —
+    -- change both to match whatever dispatch resource your server
+    -- actually runs. Set enabled = false to skip this entirely.
+    dispatch = {
+        enabled = false,
+        event = 'cd_dispatch:AddNotification',
+        buildPayload = function(coords)
+            return {
+                job_name = 'cipher_boost',
+                job_label = 'Stolen Vehicle',
+                coords = coords,
+                icon = 'fa-solid fa-car-side',
+                offset = false,
+                length = 4,
+                scanLine = { sCode = '10-46', message = 'Vehicle theft reported' },
+                flashes = 1,
+                sound = 'one',
+                alert_color = 22,
+                blip = { sprite = 526, scale = 1.2, colour = 1 },
+                jobs = { 'police' },
+                time = 5,
+            }
+        end,
+    },
+
+    -- Guards: armed hostile peds spawn near the target vehicle while
+    -- you're stealing it — a friend can come fight them off while you
+    -- work, or you can try to outrun/lose them. Despawn once the engine
+    -- starts (or the job ends any other way). Set enabled = false to skip.
+    guards = {
+        enabled = true,
+        count = 2,
+        radius = 6.0,           -- how far from the vehicle they spawn
+        model = 'g_m_y_lost_01',
+        weapon = 'WEAPON_PISTOL',
+    },
+
+    -- Achievements: computed live from cipher_boost_stats — no separate
+    -- "earned" tracking needed, just a threshold check every time status
+    -- is fetched. type = 'total_boosted' or 'level'.
+    achievements = {
+        { id = 'first_boost', label = 'First Blood', description = 'Boost your first vehicle', type = 'total_boosted', value = 1 },
+        { id = 'ten_boosts', label = 'Joyride Junkie', description = 'Boost 10 vehicles', type = 'total_boosted', value = 10 },
+        { id = 'fifty_boosts', label = 'Professional', description = 'Boost 50 vehicles', type = 'total_boosted', value = 50 },
+        { id = 'hundred_boosts', label = 'Legend', description = 'Boost 100 vehicles', type = 'total_boosted', value = 100 },
+        { id = 'max_level', label = 'Kingpin', description = 'Reach the max level', type = 'level', value = 3 },
+    },
+
+    -- Wanted vehicles: a config-defined pool, several active at once
+    -- (`activeCount`), refreshed regularly (`rotateMinutes`) — not a rare
+    -- one-off. Available to ANY level, on top of (not instead of) the
+    -- normal level-gated pool, for a flat bonus payout.
+    wanted = {
+        enabled = true,
+        activeCount = 2,
+        rotateMinutes = 30,
+        pool = {
+            { model = 'sultanrs', label = 'Wanted: Sultan RS', spawns = { vec4(-1037.0, -2737.0, 20.2, 0.0) }, cash = 3500, xp = 50 },
+            { model = 'sultan', label = 'Wanted: Sultan', spawns = { vec4(425.0, -979.0, 30.7, 0.0) }, cash = 2000, xp = 30 },
+            { model = 'blista', label = 'Wanted: Blista', spawns = { vec4(-44.0, -1752.0, 29.4, 230.0) }, cash = 1200, xp = 20 },
+        },
+    },
+
+    -- Co-op: invite a specific player (like a gang invite) to crew up on a
+    -- harder job from a separate, higher-value vehicle pool. More guards,
+    -- a tighter clock, and dispatch always fires instantly regardless of
+    -- anyone's Signal Jammer perk — teamwork doesn't get the stealth bonus.
+    -- Cash payout gets a bonus on top, then splits evenly across the crew;
+    -- XP is NOT split — every crew member gets the full amount.
+    coop = {
+        enabled = true,
+        maxCrewSize = 3,
+        timeLimitSeconds = 300,       -- shorter than solo's timeLimitSeconds
+        extraGuards = 2,              -- added on top of Config.Boosting.guards.count
+        cashBonusPct = 25,            -- bonus applied before splitting across the crew
+        vehicles = {
+            { model = 'sultanrs', label = 'Co-op: Sultan RS', spawns = { vec4(-1037.0, -2737.0, 20.2, 0.0) }, cash = 4000, xp = 60 },
+        },
     },
 }
 

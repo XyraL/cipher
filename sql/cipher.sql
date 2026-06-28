@@ -132,6 +132,43 @@ CREATE TABLE IF NOT EXISTS `cipher_chat_dms` (
     KEY `idx_to` (`to_citizenid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Car boosting: fully standalone from gangs. One row per character —
+-- level/xp drive vehicle-tier unlocks, total_boosted drives the
+-- leaderboard, total_cash is just a stat (not used for anything mechanical).
+CREATE TABLE IF NOT EXISTS `cipher_boost_stats` (
+    `citizenid`     VARCHAR(64)     NOT NULL,
+    `name`          VARCHAR(96)     NOT NULL DEFAULT '',  -- cached display name for the leaderboard
+    `level`         INT             NOT NULL DEFAULT 1,
+    `xp`            INT             NOT NULL DEFAULT 0,
+    `total_boosted` INT             NOT NULL DEFAULT 0,
+    `total_cash`    BIGINT          NOT NULL DEFAULT 0,
+    `last_boost_at` BIGINT          NOT NULL DEFAULT 0,   -- unix ms, drives cooldown
+    `perk_points`   INT             NOT NULL DEFAULT 0,   -- unspent, awarded on level-up
+    PRIMARY KEY (`citizenid`),
+    KEY `idx_leaderboard` (`total_boosted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Owned perks (Config.Boosting.perks) — passive unlocks bought with
+-- perk_points, never consumed/used-up, just a permanent modifier.
+CREATE TABLE IF NOT EXISTS `cipher_boost_perks` (
+    `citizenid`     VARCHAR(64)     NOT NULL,
+    `perk_id`       VARCHAR(48)     NOT NULL,
+    `bought_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`citizenid`, `perk_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Server-wide recent sells, shown on the Job tab. Capped to the most
+-- recent rows at query time (Config.Boosting.recentActivityLimit) — this
+-- table itself isn't pruned, just queried with a LIMIT.
+CREATE TABLE IF NOT EXISTS `cipher_boost_log` (
+    `id`            INT             NOT NULL AUTO_INCREMENT,
+    `name`          VARCHAR(96)     NOT NULL,
+    `vehicle_label` VARCHAR(64)     NOT NULL,
+    `cash`          INT             NOT NULL DEFAULT 0,
+    `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Safe to re-run on a DB that already has these tables from an earlier
 -- version of this file (MySQL 8 / MariaDB 10.0+ required for IF NOT EXISTS).
 ALTER TABLE `cipher_gang_members` ADD COLUMN IF NOT EXISTS `rep` INT NOT NULL DEFAULT 0;
@@ -143,3 +180,4 @@ ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `coord_x` FLOAT NULL;
 ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `coord_y` FLOAT NULL;
 ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `coord_z` FLOAT NULL;
 ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `assigned_at` BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE `cipher_boost_stats` ADD COLUMN IF NOT EXISTS `perk_points` INT NOT NULL DEFAULT 0;

@@ -36,6 +36,18 @@ local adminAllowed = {
     ['cipher:admin:setZoneCoords'] = true,
     ['cipher:admin:updateZone']   = true,
     ['cipher:admin:deleteZone']   = true,
+    ['cipher:admin:boostSearch']      = true,
+    ['cipher:admin:boostSetStats']    = true,
+    ['cipher:admin:boostResetStats']  = true,
+    ['cipher:admin:boostDashboard']   = true,
+    ['cipher:admin:chatGetWorld']        = true,
+    ['cipher:admin:chatDeleteWorld']     = true,
+    ['cipher:admin:chatResolveHandle']   = true,
+    ['cipher:admin:dealerGetStock']        = true,
+    ['cipher:admin:dealerReroll']          = true,
+    ['cipher:admin:dealerClearCooldown']   = true,
+    ['cipher:admin:dealerGetStatus']       = true,
+    ['cipher:admin:getDashboard']          = true,
 }
 
 RegisterNUICallback('admin:call', function(payload, cb)

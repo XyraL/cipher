@@ -17,8 +17,10 @@ end, false)
 
 -- ── Snapshot: everything the Gang Ops app needs in one round trip ──
 lib.callback.register('cipher:getSnapshot', function(src)
+    local cid = Framework.GetCitizenId(src)
+    local hasGang = cid and Gangs.GetByCitizen(cid) ~= nil
     return {
-        apps = Cipher.GetEnabledApps(),
+        apps = Cipher.GetEnabledApps(hasGang),
         gang = Gangs.Snapshot(src),
         territories = Territory.GetAssigned(),
     }

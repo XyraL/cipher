@@ -30,6 +30,7 @@ client_scripts {
     'client/drugs.lua',
     'client/dealer.lua',
     'client/crafting.lua',
+    'client/boosting.lua',
 }
 
 server_scripts {
@@ -49,6 +50,7 @@ server_scripts {
     'server/dealer.lua',
     'server/drugs.lua',
     'server/chat.lua',
+    'server/boosting.lua',
 }
 
 ui_page 'web/index.html'

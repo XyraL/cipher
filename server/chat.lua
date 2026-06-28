@@ -6,6 +6,15 @@
 -- ─────────────────────────────────────────────────────────────
 Chat = {}
 
+-- Blackmarket is gated to gang members only (even though the chat content
+-- itself isn't gang-specific) — the tablet hides the tab for non-gang
+-- players, and this is the server-side half of that, not just UI cosmetics.
+local function requireGang(src)
+    local cid = Framework.GetCitizenId(src)
+    if not cid or not Gangs.GetByCitizen(cid) then return false end
+    return true
+end
+
 local function randomHandle()
     local adj = Config.Chat.handleAdjectives[math.random(#Config.Chat.handleAdjectives)]
     local noun = Config.Chat.handleNouns[math.random(#Config.Chat.handleNouns)]
@@ -65,6 +74,20 @@ function Chat.GetWorldHistory()
     local list = {}
     for i = #rows, 1, -1 do list[#list + 1] = rows[i] end -- oldest first
     return list
+end
+
+-- ── admin moderation (no gang/anonymity gating — staff-only via admin.lua's ACE check) ──
+function Chat.GetWorldHistoryAdmin()
+    local rows = MySQL.query.await(
+        'SELECT id, handle, message, created_at FROM cipher_chat_world ORDER BY id DESC LIMIT ?',
+        { Config.Chat.worldHistoryLimit }) or {}
+    return rows
+end
+
+function Chat.DeleteWorldMessage(id)
+    if not id then return false, 'no message id' end
+    MySQL.update('DELETE FROM cipher_chat_world WHERE id = ?', { id })
+    return true
 end
 
 function Chat.PostWorld(src, message)
@@ -164,33 +187,40 @@ function Chat.SendDM(src, toHandle, message)
 end
 
 lib.callback.register('cipher:chat:getMyHandle', function(src)
+    if not requireGang(src) then return nil end
     local cid = Framework.GetCitizenId(src)
     return cid and Chat.GetOrCreateHandle(cid) or nil
 end)
 
 lib.callback.register('cipher:chat:setHandle', function(src, desired)
+    if not requireGang(src) then return { ok = false, error = 'no gang' } end
     local ok, res = Chat.SetHandle(src, desired)
     return { ok = ok, error = not ok and res or nil, handle = ok and res or nil }
 end)
 
-lib.callback.register('cipher:chat:getWorldHistory', function()
+lib.callback.register('cipher:chat:getWorldHistory', function(src)
+    if not requireGang(src) then return {} end
     return Chat.GetWorldHistory()
 end)
 
 lib.callback.register('cipher:chat:postWorld', function(src, message)
+    if not requireGang(src) then return { ok = false, error = 'no gang' } end
     local ok, res = Chat.PostWorld(src, message)
     return { ok = ok, error = not ok and res or nil }
 end)
 
 lib.callback.register('cipher:chat:getThreads', function(src)
+    if not requireGang(src) then return {} end
     return Chat.GetThreads(src)
 end)
 
 lib.callback.register('cipher:chat:getThread', function(src, handle)
+    if not requireGang(src) then return {} end
     return Chat.GetThread(src, handle)
 end)
 
 lib.callback.register('cipher:chat:sendDM', function(src, toHandle, message)
+    if not requireGang(src) then return { ok = false, error = 'no gang' } end
     local ok, res = Chat.SendDM(src, toHandle, message)
     return { ok = ok, error = not ok and res or nil }
 end)
