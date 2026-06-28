@@ -339,16 +339,33 @@ end
 local function spawnCourierVan(vanSpawn, model, isLeader)
     clearCourierVan()
     if isLeader == false then return end
-    if not IsModelValid(model) then
-        lib.notify({ description = ('Bad van model for this task (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
+    if not vanSpawn then
+        print('^1[cipher]^0 spawnCourierVan: no vanSpawn coords in job payload')
         return
     end
-    lib.requestModel(model)
-    courierVan = CreateVehicle(model, vanSpawn.x, vanSpawn.y, vanSpawn.z, vanSpawn.w or 0.0, true, true)
+
+    local hash = type(model) == 'string' and GetHashKey(model) or model
+    if not IsModelInCdimage(hash) or not IsModelValid(hash) then
+        lib.notify({ description = ('Bad van model for this task (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
+        print(('^1[cipher]^0 spawnCourierVan: model "%s" (hash %s) is not a valid streamed model'):format(tostring(model), tostring(hash)))
+        return
+    end
+
+    lib.requestModel(hash)
+    courierVan = CreateVehicle(hash, vanSpawn.x, vanSpawn.y, vanSpawn.z, vanSpawn.w or 0.0, true, true)
+    if not courierVan or courierVan == 0 then
+        lib.notify({ description = 'Failed to spawn the delivery van — check the F8 console.', type = 'error' })
+        print('^1[cipher]^0 spawnCourierVan: CreateVehicle returned 0 — model likely failed to stream in time')
+        courierVan = nil
+        return
+    end
+
+    SetEntityAsMissionEntity(courierVan, true, true)
     SetVehicleOnGroundProperly(courierVan)
     SetVehicleHasBeenOwnedByPlayer(courierVan, true)
     SetVehicleNeedsToBeHotwired(courierVan, false)
     SetVehicleDoorsLocked(courierVan, 1)
+    print(('^2[cipher]^0 spawnCourierVan: spawned van entity %s at %s, %s, %s'):format(courierVan, vanSpawn.x, vanSpawn.y, vanSpawn.z))
 
     local netId = NetworkGetNetworkIdFromEntity(courierVan)
     lib.callback.await('cipher:tasks:registerVan', false, netId)
