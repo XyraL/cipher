@@ -28,16 +28,60 @@ function Notoriety.Progress(score)
     return currentMin, nextMin
 end
 
+local function sortedGangLevels()
+    local levels = {}
+    for _, l in ipairs(Config.GangLevels) do levels[#levels + 1] = l end
+    table.sort(levels, function(a, b) return a.level < b.level end)
+    return levels
+end
+
+-- A more granular prestige number+title on the SAME notoriety value the
+-- broad tiers use — purely additive, doesn't affect tier-gated unlocks.
+function Notoriety.GangLevel(score)
+    local best = sortedGangLevels()[1]
+    for _, l in ipairs(sortedGangLevels()) do
+        if score >= l.repNeeded then best = l end
+    end
+    return best
+end
+
+function Notoriety.NextGangLevel(level)
+    for _, l in ipairs(sortedGangLevels()) do
+        if l.level > level then return l end
+    end
+    return nil -- already max
+end
+
 -- Add (or subtract, with negative amount) notoriety to a gang.
 -- Exported so other resources can reward your gangs:
 --   exports.cipher:AddNotoriety(gangId, amount, reason)
 function Notoriety.Add(gangId, amount, reason)
     local gang = Gangs.Get(gangId)
     if not gang then return end
+    local oldLevel = Notoriety.GangLevel(gang.notoriety).level
     local newVal = math.max(0, math.min(Config.Notoriety.max, gang.notoriety + amount))
     gang.notoriety = newVal
-    MySQL.update('UPDATE cipher_gangs SET notoriety = ?, last_active = ? WHERE id = ?',
-        { newVal, os.time() * 1000, gangId })
+    local newLevel = Notoriety.GangLevel(newVal).level
+
+    -- Award perk points for every gang level actually crossed (a big swing
+    -- could cross more than one), not just the final level landed on.
+    local perkPointsGained = 0
+    if newLevel > oldLevel then
+        for _, l in ipairs(sortedGangLevels()) do
+            if l.level > oldLevel and l.level <= newLevel then
+                perkPointsGained = perkPointsGained + (l.perkPoints or 0)
+            end
+        end
+    end
+
+    MySQL.update('UPDATE cipher_gangs SET notoriety = ?, last_active = ?, perk_points = perk_points + ? WHERE id = ?',
+        { newVal, os.time() * 1000, perkPointsGained, gangId })
+    if perkPointsGained > 0 then
+        gang.perk_points = (gang.perk_points or 0) + perkPointsGained
+        Gangs.Log(gangId, ('Reached %s — +%d perk point%s'):format(
+            Notoriety.GangLevel(newVal).title, perkPointsGained, perkPointsGained > 1 and 's' or ''))
+    end
+
     if Config.Debug then
         print(('^3[cipher]^0 gang %d notoriety %+d (%s) -> %d'):format(gangId, amount, reason or '?', newVal))
     end

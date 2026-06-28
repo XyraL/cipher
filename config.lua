@@ -40,8 +40,8 @@ Config.Chat = {
 --   admin:    every action taken through /admintablet (the audit trail)
 --   gang:     structural lifecycle — founded, disbanded, boss changed
 --   economy:  player-driven money movement — deposits, withdrawals,
---             dues charged, dealer purchases (NOT admin overrides,
---             those already show in the admin log)
+--             dealer purchases (NOT admin overrides, those already show
+--             in the admin log)
 -- Get a webhook URL from a Discord channel: Edit Channel > Integrations
 -- > Webhooks > New Webhook > Copy URL.
 -- ─────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ Config.Discord = {
 
 -- ─────────────────────────────────────────────────────────────
 -- Admin tablet
--- A separate NUI view for staff: gang CRUD, rep/notoriety/bank/dues
+-- A separate NUI view for staff: gang CRUD, rep/notoriety/bank
 -- overrides, territory reassignment. No physical item — just a command,
 -- gated by an ACE permission. Grant it in server.cfg, e.g.:
 --   add_ace group.admin cipher.admin allow
@@ -72,10 +72,10 @@ Config.Permissions = {
     'invite',       -- invite new members
     'kick',         -- remove members
     'promote',      -- change member grades
-    'manage_bank',  -- deposit/withdraw gang funds
+    'manage_bank',  -- withdraw gang funds (any member can deposit, no permission needed)
     'manage_vault', -- access shared vault/armory
-    'set_dues',     -- change weekly dues
     'place_objects', -- place/move crafting benches, peds, and the vault container
+    'manage_perks',  -- spend the gang's perk points
     -- Disbanding and territory assignment are admin-only — no in-game permission for either.
 }
 
@@ -85,7 +85,7 @@ Config.DefaultRanks = {
     [0] = { name = 'Prospect',    permissions = {} },
     [1] = { name = 'Soldier',     permissions = { 'manage_vault' } },
     [2] = { name = 'Lieutenant',  permissions = { 'invite', 'manage_vault' } },
-    [3] = { name = 'Underboss',   permissions = { 'invite', 'kick', 'promote', 'manage_vault', 'manage_bank', 'set_dues' } },
+    [3] = { name = 'Underboss',   permissions = { 'invite', 'kick', 'promote', 'manage_vault', 'manage_bank' } },
     [4] = { name = 'Boss',        permissions = '*' }, -- '*' = all permissions, including place_objects
 }
 
@@ -136,12 +136,88 @@ Config.Notoriety = {
 }
 
 -- ─────────────────────────────────────────────────────────────
+-- Gang levels
+-- A more granular prestige number + title layered ON TOP of the same
+-- notoriety value the 4 broad tiers already use — tiers keep gating
+-- benches/recipes/zone size exactly as before, this is purely additive.
+-- Crossing a level threshold awards perkPoints, spent on Config.GangPerks.
+-- ─────────────────────────────────────────────────────────────
+Config.GangLevels = {
+    { level = 1, repNeeded = 0,    title = 'Crew',        perkPoints = 0 },
+    { level = 2, repNeeded = 250,  title = 'Outfit',      perkPoints = 1 },
+    { level = 3, repNeeded = 750,  title = 'Syndicate',   perkPoints = 1 },
+    { level = 4, repNeeded = 1500, title = 'Cartel',      perkPoints = 1 },
+    { level = 5, repNeeded = 3000, title = 'Family',      perkPoints = 2 },
+    { level = 6, repNeeded = 5000, title = 'Empire',      perkPoints = 2 },
+    { level = 7, repNeeded = 7500, title = 'Dynasty',     perkPoints = 2 },
+    { level = 8, repNeeded = 10000, title = 'Untouchable', perkPoints = 3 },
+}
+
+-- ─────────────────────────────────────────────────────────────
+-- Gang perk tree
+-- Permanent, gang-wide modifiers bought with perk_points — Boss-only
+-- (the 'manage_perks' permission, granted to Boss by default via '*').
+-- No inventory items, nothing consumed. Three branches, each a chain of
+-- tiers — tier N requires tier N-1 in that SAME branch already owned, so
+-- it reads as a real tree (vertical chains), not a flat shopping list.
+-- Effects stack as you buy further up a branch.
+--   vault: slotsBonus / weightBonusPct
+--   members: maxMembersBonus
+--   bench: craftTimePct (negative = faster), bonusOutputChance (%),
+--          tierBoost (1 = treat the gang as one tier higher for which
+--          recipes are unlocked at the bench, on top of its real tier)
+-- ─────────────────────────────────────────────────────────────
+Config.GangPerks = {
+    vault = {
+        label = 'Vault',
+        icon = 'fa-vault',
+        tiers = {
+            { id = 'vault_1', label = 'Reinforced Vault', description = '+25 slots, +25% weight capacity',
+              cost = 1, slotsBonus = 25, weightBonusPct = 25 },
+            { id = 'vault_2', label = 'Fortified Vault', description = '+50 more slots, +50% more weight capacity',
+              cost = 2, slotsBonus = 50, weightBonusPct = 50 },
+            { id = 'vault_3', label = 'Underground Vault', description = '+100 more slots, +100% more weight capacity',
+              cost = 3, slotsBonus = 100, weightBonusPct = 100 },
+        },
+    },
+    members = {
+        label = 'Recruitment',
+        icon = 'fa-users',
+        tiers = {
+            { id = 'members_1', label = 'Open Doors', description = '+10 max members',
+              cost = 1, maxMembersBonus = 10 },
+            { id = 'members_2', label = 'Word on the Street', description = '+15 more max members',
+              cost = 2, maxMembersBonus = 15 },
+            { id = 'members_3', label = 'Citywide Reputation', description = '+25 more max members',
+              cost = 3, maxMembersBonus = 25 },
+        },
+    },
+    bench = {
+        label = 'Workshop',
+        icon = 'fa-screwdriver-wrench',
+        tiers = {
+            { id = 'bench_1', label = 'Quality Tools', description = '-20% crafting time',
+              cost = 1, craftTimePct = -20 },
+            { id = 'bench_2', label = 'Bulk Production', description = '+25% chance to double craft output',
+              cost = 2, bonusOutputChance = 25 },
+            { id = 'bench_3', label = 'Master Workshop', description = 'Bench recipes unlock as if one tier higher',
+              cost = 3, tierBoost = 1 },
+        },
+    },
+}
+
+-- How long since a member's last tablet open before the roster flags them
+-- as inactive (purely visual — doesn't kick or affect anything mechanical).
+Config.GangInactivityDays = 7
+
+-- ─────────────────────────────────────────────────────────────
 -- Territory
--- There is no in-world capture. Zones are assigned to a gang entirely
--- through the admin tablet — including setting a zone's coords to the
--- admin's current position. This table is just an optional seed for
--- zones you want to exist on first boot; admins can also create zones
--- live without ever touching this file.
+-- There is no in-world capture and no passive income — holding a zone is
+-- prestige/visual only. Zones are assigned to a gang entirely through the
+-- admin tablet — including setting a zone's coords to the admin's current
+-- position. This table is just an optional seed for zones you want to
+-- exist on first boot; admins can also create zones live without ever
+-- touching this file.
 -- ─────────────────────────────────────────────────────────────
 Config.ZoneRadius = 60.0  -- base radius of the map blip circle, in meters (at Unknown tier)
 Config.ZoneRadiusGrowthPerTier = 20.0  -- added per tier the HOLDING gang has climbed — purely visual
@@ -152,23 +228,18 @@ Config.Territories = {
         label = 'Grove Street',
         coords = vec3(-100.0, -1900.0, 25.0),
         color = 2,                  -- blip color
-        income = 1500,              -- payout per cycle to the assigned gang
     },
     docks = {
         label = 'Elysian Docks',
         coords = vec3(110.0, -3000.0, 6.0),
         color = 38,
-        income = 2200,
     },
     vinewood = {
         label = 'Vinewood Hills',
         coords = vec3(120.0, 560.0, 184.0),
         color = 5,
-        income = 2000,
     },
 }
-
-Config.TerritoryIncomeMinutes = 60  -- how often assigned gangs are paid
 
 -- ─────────────────────────────────────────────────────────────
 -- Tier unlocks
@@ -455,13 +526,14 @@ Config.Boosting = {
 }
 
 -- ─────────────────────────────────────────────────────────────
--- Bank & dues
+-- Treasury
+-- No forced dues — every member can deposit into the gang bank whenever
+-- they want (voluntary, like paying your own way), withdraw stays gated
+-- by the 'manage_bank' permission so a member can't drain it solo.
 -- ─────────────────────────────────────────────────────────────
-Config.Dues = {
-    enabled = true,
-    defaultAmount = 0,              -- per member, per cycle (0 = off until set)
-    intervalHours = 168,            -- weekly
-    account = 'bank',               -- which member account dues pull from
+Config.Bank = {
+    account = 'bank', -- which money account deposits/withdrawals use
+    ledgerLimit = 25,  -- recent transactions kept on the Treasury tab
 }
 
 -- ─────────────────────────────────────────────────────────────

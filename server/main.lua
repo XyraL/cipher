@@ -48,7 +48,7 @@ RegisterNetEvent('cipher:server:acceptInvite', function()
         ok and 'success' or 'error')
 end)
 
--- ── Bank / dues ──
+-- ── Bank ──
 lib.callback.register('cipher:bankDeposit', function(src, amount)
     local ok, res = Bank.Deposit(src, amount)
     return { ok = ok, balance = ok and res or nil, error = not ok and res or nil }
@@ -59,8 +59,9 @@ lib.callback.register('cipher:bankWithdraw', function(src, amount)
     return { ok = ok, balance = ok and res or nil, error = not ok and res or nil }
 end)
 
-lib.callback.register('cipher:setDues', function(src, amount)
-    local ok, err = Bank.SetDues(src, amount)
-    return { ok = ok, error = err }
+lib.callback.register('cipher:bankGetLedger', function(src)
+    local gang = Gangs.GetBySource(src)
+    if not gang then return {} end
+    return Bank.GetLedger(gang.id)
 end)
 

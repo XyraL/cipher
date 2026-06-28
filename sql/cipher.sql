@@ -11,9 +11,21 @@ CREATE TABLE IF NOT EXISTS `cipher_gangs` (
     `dues_amount`   INT             NOT NULL DEFAULT 0,
     `dues_last`     BIGINT          NOT NULL DEFAULT 0,  -- unix ms of last cycle
     `last_active`   BIGINT          NOT NULL DEFAULT 0,  -- unix ms, drives decay
+    `perk_points`   INT             NOT NULL DEFAULT 0,  -- unspent, awarded on gang level-up
     `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uniq_name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Owned gang perks (Config.GangPerks) — permanent, gang-wide modifiers
+-- bought with perk_points. Mirrors cipher_boost_perks' shape.
+CREATE TABLE IF NOT EXISTS `cipher_gang_perks` (
+    `gang_id`       INT             NOT NULL,
+    `perk_id`       VARCHAR(48)     NOT NULL,
+    `bought_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`gang_id`, `perk_id`),
+    CONSTRAINT `fk_gangperk_gang` FOREIGN KEY (`gang_id`)
+        REFERENCES `cipher_gangs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS `cipher_gang_ranks` (
@@ -33,6 +45,7 @@ CREATE TABLE IF NOT EXISTS `cipher_gang_members` (
     `grade`         INT             NOT NULL DEFAULT 0,
     `rep`           INT             NOT NULL DEFAULT 0,  -- personal rep, feeds gang notoriety
     `dues_paid_at`  BIGINT          NOT NULL DEFAULT 0,  -- unix ms of last dues charge, drives offline catch-up
+    `last_seen`     BIGINT          NOT NULL DEFAULT 0,  -- unix ms, updated on tablet snapshot fetch
     `joined_at`     TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`citizenid`),                           -- one gang per character
     KEY `idx_gang` (`gang_id`),
@@ -96,6 +109,22 @@ CREATE TABLE IF NOT EXISTS `cipher_gang_logs` (
     PRIMARY KEY (`id`),
     KEY `idx_gang_log` (`gang_id`),
     CONSTRAINT `fk_log_gang` FOREIGN KEY (`gang_id`)
+        REFERENCES `cipher_gangs` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Dedicated treasury ledger (separate from the general activity log) for
+-- the Treasury tab's bank-statement-style transaction history.
+CREATE TABLE IF NOT EXISTS `cipher_gang_bank_log` (
+    `id`            INT             NOT NULL AUTO_INCREMENT,
+    `gang_id`       INT             NOT NULL,
+    `citizenid`     VARCHAR(64)     NOT NULL DEFAULT '',
+    `name`          VARCHAR(96)     NOT NULL,
+    `kind`          VARCHAR(16)     NOT NULL,            -- 'deposit' | 'withdraw'
+    `amount`        BIGINT          NOT NULL DEFAULT 0,
+    `created_at`    TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_banklog_gang` (`gang_id`),
+    CONSTRAINT `fk_banklog_gang` FOREIGN KEY (`gang_id`)
         REFERENCES `cipher_gangs` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -181,3 +210,5 @@ ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `coord_y` FLOAT NULL;
 ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `coord_z` FLOAT NULL;
 ALTER TABLE `cipher_territories` ADD COLUMN IF NOT EXISTS `assigned_at` BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE `cipher_boost_stats` ADD COLUMN IF NOT EXISTS `perk_points` INT NOT NULL DEFAULT 0;
+ALTER TABLE `cipher_gangs` ADD COLUMN IF NOT EXISTS `perk_points` INT NOT NULL DEFAULT 0;
+ALTER TABLE `cipher_gang_members` ADD COLUMN IF NOT EXISTS `last_seen` BIGINT NOT NULL DEFAULT 0;

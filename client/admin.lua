@@ -30,7 +30,6 @@ local adminAllowed = {
     ['cipher:admin:adjustRep']     = true,
     ['cipher:admin:adjustNotoriety'] = true,
     ['cipher:admin:setBank']      = true,
-    ['cipher:admin:setDues']      = true,
     ['cipher:admin:setTerritory'] = true,
     ['cipher:admin:createZone']   = true,
     ['cipher:admin:setZoneCoords'] = true,

@@ -27,18 +27,23 @@ local function hasItems(src, inputs)
 end
 
 -- Every recipe, with a `locked` flag for ones the gang's tier doesn't
--- reach yet — same pattern as the Unlocks tab's placeables list.
+-- reach yet — same pattern as the Unlocks tab's placeables list. The
+-- Master Workshop perk (tierBoost) makes the bench treat the gang as one
+-- tier higher than it really is, purely for which recipes unlock here.
 function Crafting.GetRecipes(src)
     local cid = Framework.GetCitizenId(src)
     local gang = cid and Gangs.GetByCitizen(cid)
-    local myTierIdx = gang and tierIndex(Notoriety.Tier(gang.notoriety)) or 0
+    local mods = gang and GangPerks.ModifiersFor(gang.id) or { craftTimePct = 0 }
+    local myTierIdx = gang and (tierIndex(Notoriety.Tier(gang.notoriety)) + mods.tierBoost) or 0
+    local timeMult = 1 + (mods.craftTimePct or 0) / 100
 
     local list = {}
     for _, r in ipairs(Config.Recipes) do
         local reqTier = r.tier or Config.Notoriety.tiers[1].name
         local reqIdx = tierIndex(reqTier)
         list[#list + 1] = {
-            id = r.id, label = r.label, inputs = r.inputs, output = r.output, time = r.time,
+            id = r.id, label = r.label, inputs = r.inputs, output = r.output,
+            time = math.max(500, math.floor((r.time or 0) * timeMult)),
             locked = reqIdx > myTierIdx, tierName = reqTier,
         }
     end
@@ -53,8 +58,9 @@ function Crafting.Craft(src, recipeId)
     local gang = cid and Gangs.GetByCitizen(cid)
     if not gang then return false, 'no gang' end
 
+    local mods = GangPerks.ModifiersFor(gang.id)
     local reqTier = recipe.tier or Config.Notoriety.tiers[1].name
-    if tierIndex(Notoriety.Tier(gang.notoriety)) < tierIndex(reqTier) then
+    if (tierIndex(Notoriety.Tier(gang.notoriety)) + mods.tierBoost) < tierIndex(reqTier) then
         return false, ('requires %s tier'):format(reqTier)
     end
 
@@ -64,9 +70,15 @@ function Crafting.Craft(src, recipeId)
     for _, inp in ipairs(recipe.inputs) do
         exports.ox_inventory:RemoveItem(src, inp.item, inp.count)
     end
-    exports.ox_inventory:AddItem(src, recipe.output.item, recipe.output.count)
-    Gangs.Log(gang.id, ('%s crafted %dx %s'):format(Framework.GetName(src) or cid, recipe.output.count, recipe.output.item))
-    return true
+
+    local outputCount = recipe.output.count
+    local bonus = math.random() * 100 < mods.bonusOutputChance
+    if bonus then outputCount = outputCount * 2 end
+
+    exports.ox_inventory:AddItem(src, recipe.output.item, outputCount)
+    Gangs.Log(gang.id, ('%s crafted %dx %s%s'):format(
+        Framework.GetName(src) or cid, outputCount, recipe.output.item, bonus and ' (bonus output!)' or ''))
+    return true, bonus
 end
 
 lib.callback.register('cipher:crafting:getRecipes', function(src)
@@ -74,6 +86,6 @@ lib.callback.register('cipher:crafting:getRecipes', function(src)
 end)
 
 lib.callback.register('cipher:crafting:craft', function(src, recipeId)
-    local ok, err = Crafting.Craft(src, recipeId)
-    return { ok = ok, error = err }
+    local ok, errOrBonus = Crafting.Craft(src, recipeId)
+    return { ok = ok, error = not ok and errOrBonus or nil, bonus = ok and errOrBonus or nil }
 end)

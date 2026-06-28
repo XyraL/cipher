@@ -7,12 +7,16 @@ Vault = {}
 local function stashId(gangId) return ('cipher_gang_%d'):format(gangId) end
 
 -- Register/refresh the stash for a gang so ox_inventory knows about it.
+-- Slot/weight perks (Config.GangPerks) bump the base size.
 local function ensureStash(gangId)
+    local mods = GangPerks.ModifiersFor(gangId)
+    local slots = Config.Vault.slots + mods.vaultSlotsBonus
+    local weight = math.floor(Config.Vault.maxWeight * (1 + mods.vaultWeightBonusPct / 100))
     exports.ox_inventory:RegisterStash(
         stashId(gangId),
         ('Gang Vault'),
-        Config.Vault.slots,
-        Config.Vault.maxWeight,
+        slots,
+        weight,
         false -- not owner-restricted; we gate access ourselves below
     )
 end

@@ -39,6 +39,7 @@ server_scripts {
     'server/discord.lua',
     'server/main.lua',
     'server/gangs.lua',
+    'server/gangperks.lua',
     'server/territory.lua',
     'server/notoriety.lua',
     'server/vault.lua',

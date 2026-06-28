@@ -1,12 +1,13 @@
 -- ─────────────────────────────────────────────────────────────
 -- Territory: zones assigned to a gang entirely by admins (no in-world
--- capture). Holding a zone grants periodic income. Config.Territories
--- is just an optional first-boot seed; admins can also create/move zones
--- live through the admin tablet, which is the source of truth from then on.
+-- capture, no passive income — holding a zone is purely prestige/visual).
+-- Config.Territories is just an optional first-boot seed; admins can also
+-- create/move zones live through the admin tablet, which is the source of
+-- truth from then on.
 -- ─────────────────────────────────────────────────────────────
 Territory = {}
 
-local zones = {}  -- [zone] = { label, color, income, coords, gangId }
+local zones = {}  -- [zone] = { label, color, coords, gangId }
 
 local function rowToZone(row)
     local coords = (row.coord_x and row.coord_y and row.coord_z)
@@ -15,7 +16,6 @@ local function rowToZone(row)
     return {
         label = (row.label ~= '' and row.label) or (seed and seed.label) or row.zone,
         color = row.color ~= 0 and row.color or (seed and seed.color) or 0,
-        income = row.income ~= 0 and row.income or (seed and seed.income) or 0,
         coords = coords or (seed and seed.coords) or nil,
         gangId = row.gang_id,
     }
@@ -28,8 +28,8 @@ local function loadZones()
         local exists = MySQL.single.await('SELECT zone FROM cipher_territories WHERE zone = ?', { zone })
         if not exists then
             MySQL.insert.await(
-                'INSERT INTO cipher_territories (zone, label, color, income, coord_x, coord_y, coord_z) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                { zone, def.label or zone, def.color or 0, def.income or 0, def.coords.x, def.coords.y, def.coords.z })
+                'INSERT INTO cipher_territories (zone, label, color, coord_x, coord_y, coord_z) VALUES (?, ?, ?, ?, ?, ?)',
+                { zone, def.label or zone, def.color or 0, def.coords.x, def.coords.y, def.coords.z })
         end
     end
 
@@ -57,7 +57,6 @@ function Territory.GetAll()
                 label = z.label,
                 coords = z.coords,
                 color = z.color,
-                income = z.income,
                 holder = gang and gang.label or nil,
                 holderId = z.gangId,
                 holderTier = gang and Notoriety.Tier(gang.notoriety) or nil,
@@ -124,7 +123,7 @@ function Territory.CreateZone(zone, label, color)
     MySQL.insert.await(
         'INSERT INTO cipher_territories (zone, label, color) VALUES (?, ?, ?)',
         { zone, label or zone, color or 0 })
-    zones[zone] = { label = label or zone, color = color or 0, income = 0, coords = nil, gangId = nil }
+    zones[zone] = { label = label or zone, color = color or 0, coords = nil, gangId = nil }
     return true, zone
 end
 
@@ -141,10 +140,6 @@ function Territory.UpdateZone(zone, fields)
     if fields.label then
         MySQL.update('UPDATE cipher_territories SET label = ? WHERE zone = ?', { fields.label, zone })
         zones[zone].label = fields.label
-    end
-    if fields.income then
-        MySQL.update('UPDATE cipher_territories SET income = ? WHERE zone = ?', { fields.income, zone })
-        zones[zone].income = fields.income
     end
     if fields.color then
         MySQL.update('UPDATE cipher_territories SET color = ? WHERE zone = ?', { fields.color, zone })
@@ -180,25 +175,10 @@ function Territory.ClearHolder(gangId)
     end
 end
 
--- income loop
 CreateThread(function()
     Wait(2000)
     loadZones()
     TriggerClientEvent('cipher:client:territoryUpdate', -1, Territory.GetAssigned())
-
-    while true do
-        Wait(Config.TerritoryIncomeMinutes * 60 * 1000)
-        for zone, z in pairs(zones) do
-            if z.gangId and z.income and z.income > 0 then
-                local gang = Gangs.Get(z.gangId)
-                if gang then
-                    gang.bank = gang.bank + z.income
-                    MySQL.update('UPDATE cipher_gangs SET bank = bank + ? WHERE id = ?', { z.income, z.gangId })
-                    Gangs.Log(z.gangId, ('+$%d income from %s'):format(z.income, z.label))
-                end
-            end
-        end
-    end
 end)
 
 lib.callback.register('cipher:territory:getAll', function()

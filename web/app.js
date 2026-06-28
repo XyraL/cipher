@@ -153,20 +153,41 @@ function render() {
     renderTasks();
     renderUnlocks();
     renderDealer();
+    renderGangPerks();
+}
+
+// Animates a stat from its current displayed value to a new one — a
+// cheap "premium dashboard" touch for the Main overview cards.
+function countUp(el, target, prefix = '') {
+    const start = Number((el.textContent || '').replace(/[^0-9.-]/g, '')) || 0;
+    if (start === target) { el.textContent = prefix + target.toLocaleString(); return; }
+    const duration = 500;
+    const startTime = performance.now();
+    function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+        const value = Math.round(start + (target - start) * eased);
+        el.textContent = prefix + value.toLocaleString();
+        if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
 }
 
 // ── main overview ──
 function renderOverview(g) {
     $('#overviewName').textContent = g.label;
     $('#overviewTier').textContent = g.tier;
-    $('#overviewBank').textContent = '$' + Number(g.bank).toLocaleString();
-    $('#overviewRep').textContent = Number(g.notoriety).toLocaleString();
-    $('#overviewMembers').textContent = g.members.length;
-    $('#overviewOnline').textContent = g.members.filter((m) => m.online).length;
-    $('#overviewTerritories').textContent = (state.snapshot.territories || []).filter((t) => t.holderId === g.id).length;
+    countUp($('#overviewBank'), Number(g.bank), '$');
+    countUp($('#overviewRep'), Number(g.notoriety));
+    countUp($('#overviewMembers'), g.members.length);
+    countUp($('#overviewOnline'), g.members.filter((m) => m.online).length);
+    countUp($('#overviewTerritories'), (state.snapshot.territories || []).filter((t) => t.holderId === g.id).length);
     const myRank = g.ranks[g.myGrade] ? g.ranks[g.myGrade].name : '?';
     $('#overviewMyRank').textContent = myRank;
     renderLogList($('#overviewLogs'), (g.logs || []).slice(0, 8));
+
+    $('#overviewLevelBadge').textContent = 'LV ' + (g.gangLevel || 1);
+    $('#overviewLevelTitle').textContent = g.gangLevelTitle || 'Crew';
 
     if (g.nextTierMin == null) {
         $('#overviewProgressFill').style.width = '100%';
@@ -199,22 +220,36 @@ function playGlitch(el) {
 // ── roster ──
 function canManage(g) { return g.myGrade >= 2; } // simple UI gate; server is authoritative
 
+function lastSeenLabel(ms) {
+    if (!ms) return 'Never';
+    const mins = Math.floor((Date.now() - ms) / 60000);
+    if (mins < 2) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+}
+
 function renderRoster(g) {
     $('#memberCount').textContent = g.members.length;
     $('#myRep').textContent = g.myRep || 0;
+    const inactivityMs = (g.inactivityDays || 7) * 86400000;
+
     const list = $('#memberList');
     list.innerHTML = '';
     g.members.forEach((m) => {
         const wrap = document.createElement('div');
         wrap.className = 'member-wrap';
 
+        const inactive = !m.online && m.lastSeen && (Date.now() - m.lastSeen) > inactivityMs;
         const row = document.createElement('div');
-        row.className = 'member member-row';
+        row.className = 'member member-row' + (inactive ? ' is-inactive' : '');
         row.innerHTML = `
             <span class="online-dot ${m.online ? 'online' : ''}" title="${m.online ? 'Online' : 'Offline'}"></span>
             <span class="member-grade">${m.grade}</span>
             <span class="member-name">${escapeHtml(m.name)}</span>
             <span class="member-rank ${m.isOwner ? 'member-boss' : ''}">${escapeHtml(m.rank)}</span>
+            <span class="muted member-lastseen">${m.online ? 'Online' : lastSeenLabel(m.lastSeen)}</span>
             <span class="chevron">▾</span>`;
 
         const detail = document.createElement('div');
@@ -225,6 +260,7 @@ function renderRoster(g) {
             <button class="icon-btn danger" data-act="kick" data-cid="${m.citizenid}" title="Remove">✕</button>` : '';
         detail.innerHTML = `
             <span class="muted">Personal rep: <strong>${m.rep || 0}</strong></span>
+            <span class="muted">Last seen: <strong>${lastSeenLabel(m.lastSeen)}</strong></span>
             <div class="member-actions">${actions}</div>`;
 
         row.onclick = () => detail.classList.toggle('hidden');
@@ -243,6 +279,25 @@ function renderRoster(g) {
             await refresh();
         };
     });
+
+    renderTopContributors(g);
+}
+
+function renderTopContributors(g) {
+    const list = $('#topContributors');
+    if (!list) return;
+    list.innerHTML = '';
+    const top = [...g.members].sort((a, b) => (b.rep || 0) - (a.rep || 0)).slice(0, 5);
+    if (!top.length) { list.innerHTML = '<div class="log-empty">No contributions yet.</div>'; return; }
+    top.forEach((m, i) => {
+        const row = document.createElement('div');
+        row.className = 'member contributor-row';
+        row.innerHTML = `
+            <span class="contributor-rank">#${i + 1}</span>
+            <span class="member-name">${escapeHtml(m.name)}</span>
+            <span class="member-rank">${m.rep || 0} rep</span>`;
+        list.appendChild(row);
+    });
 }
 
 $('#inviteBtn').onclick = async () => {
@@ -255,11 +310,106 @@ $('#inviteBtn').onclick = async () => {
 };
 
 // ── territory (signature) ──
+// GTA V's playable world is roughly -4500..4500 on X and -4500..8200 on Y
+// (Blaine County stretches further north than south) — this is a
+// stylized/abstract map, not a real one, so approximate normalization
+// ranges are fine; they just need to spread zones out sensibly.
+const MAP_BOUNDS_X = { min: -4500, max: 4500 };
+const MAP_BOUNDS_Y = { min: -4500, max: 8200 };
+function mapCoordX(v) {
+    const pct = (v - MAP_BOUNDS_X.min) / (MAP_BOUNDS_X.max - MAP_BOUNDS_X.min);
+    return Math.max(20, Math.min(580, pct * 600));
+}
+function mapCoordY(v) {
+    const pct = (v - MAP_BOUNDS_Y.min) / (MAP_BOUNDS_Y.max - MAP_BOUNDS_Y.min);
+    return Math.max(20, Math.min(580, pct * 600));
+}
+
+// Rough district labels at approximate world coords — decorative chrome,
+// not precise cartography, just enough to sell "this is a map."
+const MAP_DISTRICTS = [
+    { label: 'LOS SANTOS', x: -700, y: -1900 },
+    { label: 'VINEWOOD HILLS', x: 300, y: 550 },
+    { label: 'SANDY SHORES', x: 1900, y: 3700 },
+    { label: 'GRAPESEED', x: 1700, y: 4700 },
+    { label: 'PALETO BAY', x: -300, y: 6200 },
+    { label: 'BLAINE COUNTY', x: 1200, y: 2000 },
+];
+
+function drawMapChrome(svg) {
+    const ns = 'http://www.w3.org/2000/svg';
+
+    // A rough landmass silhouette (not a real coastline) so the map reads
+    // as "an island/coast", with everything outside it tinted as ocean.
+    const land = document.createElementNS(ns, 'path');
+    land.setAttribute('class', 'map-land');
+    land.setAttribute('d',
+        'M 40 420 Q 30 300 110 230 Q 90 140 180 90 Q 280 30 420 50 ' +
+        'Q 540 70 570 160 Q 600 230 540 300 Q 580 380 520 460 ' +
+        'Q 480 560 360 580 Q 220 600 130 540 Q 60 500 40 420 Z');
+    svg.appendChild(land);
+
+    // Soft terrain tints — city/hills/desert, just radial glows roughly
+    // centered on each district, not hard borders.
+    const terrains = [
+        { x: -700, y: -1900, color: 'rgba(245,165,36,.10)', r: 140 },  // Los Santos: warm urban
+        { x: 300, y: 550, color: 'rgba(45,212,191,.08)', r: 110 },     // Vinewood: green
+        { x: 1700, y: 4000, color: 'rgba(180,140,60,.10)', r: 170 },   // Blaine County: sandy
+    ];
+    terrains.forEach((t, i) => {
+        const grad = document.createElementNS(ns, 'radialGradient');
+        grad.setAttribute('id', 'terrain' + i);
+        grad.innerHTML = `<stop offset="0%" stop-color="${t.color}"></stop><stop offset="100%" stop-color="${t.color}" stop-opacity="0"></stop>`;
+        const defs = svg.querySelector('defs') || svg.appendChild(document.createElementNS(ns, 'defs'));
+        defs.appendChild(grad);
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', mapCoordX(t.x));
+        circle.setAttribute('cy', 600 - mapCoordY(t.y));
+        circle.setAttribute('r', t.r);
+        circle.setAttribute('fill', `url(#terrain${i})`);
+        svg.appendChild(circle);
+    });
+
+    // A couple of faint "highway" lines for flavor.
+    const roads = document.createElementNS(ns, 'g');
+    roads.setAttribute('class', 'map-roads');
+    roads.innerHTML = `
+        <path d="M 80 460 Q 250 380 320 280 Q 400 160 520 110" />
+        <path d="M 150 520 Q 300 460 380 360 Q 460 260 560 220" />`;
+    svg.appendChild(roads);
+
+    MAP_DISTRICTS.forEach((d) => {
+        const t = document.createElementNS(ns, 'text');
+        t.setAttribute('x', mapCoordX(d.x));
+        t.setAttribute('y', 600 - mapCoordY(d.y));
+        t.setAttribute('class', 'map-district-label');
+        t.textContent = d.label;
+        svg.appendChild(t);
+    });
+
+    // Radar sweep: a rotating wedge centered on the map, purely decorative.
+    const sweep = document.createElementNS(ns, 'g');
+    sweep.setAttribute('class', 'map-radar-sweep');
+    sweep.innerHTML = `
+        <defs>
+            <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="var(--accent)" stop-opacity="0"></stop>
+                <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.25"></stop>
+            </linearGradient>
+        </defs>
+        <path d="M 300 300 L 300 20 A 280 280 0 0 1 480 90 Z" fill="url(#sweepGrad)"></path>`;
+    svg.appendChild(sweep);
+}
+
 function renderTerritory() {
     const grid = $('#turfGrid');
+    const svg = $('#territoryMap');
     const terr = state.snapshot.territories || [];
     const myId = state.snapshot.gang ? state.snapshot.gang.id : null;
     grid.innerHTML = '';
+    if (svg) { svg.innerHTML = ''; drawMapChrome(svg); }
+    $('#territoryDetail').classList.add('hidden');
+
     terr.forEach((t) => {
         const mine = t.holderId && t.holderId === myId;
         const held = !!t.holderId;
@@ -277,16 +427,36 @@ function renderTerritory() {
             </div>
             <div class="turf-holder ${holderCls}">${escapeHtml(holderTxt)}</div>`;
         grid.appendChild(card);
+
+        if (svg && t.coords) {
+            const x = mapCoordX(t.coords.x);
+            const y = 600 - mapCoordY(t.coords.y); // flip so north is up
+            const dotColor = mine ? 'var(--signal)' : (held ? 'var(--danger)' : 'var(--muted)');
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.setAttribute('class', 'map-zone' + (mine ? ' is-mine' : ''));
+            g.innerHTML = `
+                <circle cx="${x}" cy="${y}" r="${mine ? 14 : 10}" fill="${dotColor}" fill-opacity="0.18" stroke="${dotColor}" stroke-width="1.5"></circle>
+                <circle cx="${x}" cy="${y}" r="3.5" fill="${dotColor}"></circle>`;
+            g.style.cursor = 'pointer';
+            g.onclick = () => {
+                const detail = $('#territoryDetail');
+                detail.classList.remove('hidden');
+                detail.innerHTML = `
+                    <span class="member-name">${escapeHtml(t.label)}</span>
+                    <span class="member-rank ${holderCls}">${escapeHtml(holderTxt)}</span>`;
+            };
+            svg.appendChild(g);
+        }
     });
     if (!terr.length) grid.innerHTML = '<div class="log-empty">No territories configured.</div>';
 }
 
-// ── treasury ──
+// ── treasury (bank-statement feel) ──
 function renderBank(g) {
     $('#bankBalance').textContent = '$' + Number(g.bank).toLocaleString();
-    $('#duesAmount').value = g.dues || '';
     $('#treasuryTier').textContent = g.tier;
     $('#treasuryRep').textContent = `${Number(g.notoriety).toLocaleString()} rep`;
+    renderLedger();
 }
 
 $('#depositBtn').onclick = () => bankAction('cipher:bankDeposit');
@@ -296,14 +466,33 @@ async function bankAction(name) {
     if (!amt || amt <= 0) return;
     const res = await call(name, amt);
     $('#bankAmount').value = '';
-    if (res.ok) { state.snapshot.gang.bank = res.balance; renderBank(state.snapshot.gang); flash('Done', 'success'); }
-    else flash(res.error || 'Failed', 'error');
+    if (res.ok) {
+        state.snapshot.gang.bank = res.balance;
+        renderBank(state.snapshot.gang);
+        flash('Done', 'success');
+    } else flash(res.error || 'Failed', 'error');
 }
-$('#setDuesBtn').onclick = async () => {
-    const res = await call('cipher:setDues', Number($('#duesAmount').value) || 0);
-    if (res.ok) flash('Dues updated', 'success');
-    else flash(res.error || 'Failed', 'error');
-};
+
+async function renderLedger() {
+    const rows = await call('cipher:bankGetLedger');
+    const list = $('#bankLedger');
+    if (!list) return;
+    list.innerHTML = '';
+    if (!rows || !rows.length) { list.innerHTML = '<div class="log-empty">No transactions yet.</div>'; return; }
+    rows.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'ledger-row ' + (r.kind === 'deposit' ? 'is-deposit' : 'is-withdraw');
+        const sign = r.kind === 'deposit' ? '+' : '-';
+        row.innerHTML = `
+            <span class="ledger-icon">${r.kind === 'deposit' ? '↓' : '↑'}</span>
+            <div class="ledger-info">
+                <span class="ledger-name">${escapeHtml(r.name)}</span>
+                <span class="ledger-time muted">${formatTime(r.created_at)}</span>
+            </div>
+            <span class="ledger-amount">${sign}$${Number(r.amount).toLocaleString()}</span>`;
+        list.appendChild(row);
+    });
+}
 
 // ── activity ──
 function renderLogList(list, logs) {
@@ -687,6 +876,59 @@ $('#callDealerBtn').onclick = async () => {
     else flash(res.error || 'Failed', 'error');
     await renderDealer();
 };
+
+// ── gang perks: a real branching tree, not a flat list ──
+async function renderGangPerks() {
+    const res = await call('cipher:gangperks:getTree');
+    const branches = (res && res.branches) || [];
+    const points = (res && res.perkPoints) || 0;
+    $('#gangPerkPoints').textContent = points;
+
+    const wrap = $('#perkTree');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!branches.length) { wrap.innerHTML = '<div class="log-empty">No perks configured.</div>'; return; }
+
+    branches.forEach((b) => {
+        const col = document.createElement('div');
+        col.className = 'perk-branch';
+        col.innerHTML = `<div class="perk-branch-title">${escapeHtml(b.label)}</div>`;
+
+        const chain = document.createElement('div');
+        chain.className = 'perk-chain';
+
+        b.tiers.forEach((t, i) => {
+            if (i > 0) {
+                const line = document.createElement('div');
+                line.className = 'perk-line' + (t.owned || (b.tiers[i - 1].owned) ? ' is-active' : '');
+                chain.appendChild(line);
+            }
+
+            const node = document.createElement('div');
+            const stateCls = t.owned ? 'is-owned' : (t.locked ? 'is-locked' : (t.affordable ? 'is-affordable' : 'is-unaffordable'));
+            node.className = 'perk-node ' + stateCls;
+            node.innerHTML = `
+                <div class="perk-node-icon">${t.owned ? '✓' : (t.locked ? '🔒' : t.tier)}</div>
+                <div class="perk-node-body">
+                    <div class="perk-node-label">${escapeHtml(t.label)}</div>
+                    <div class="perk-node-desc">${escapeHtml(t.description)}</div>
+                    ${t.owned ? '' : `<button class="perk-buy-btn" data-buy-perk="${t.id}" ${(t.locked || !t.affordable) ? 'disabled' : ''}>${t.cost} pt${t.cost > 1 ? 's' : ''}</button>`}
+                </div>`;
+            chain.appendChild(node);
+        });
+
+        col.appendChild(chain);
+        wrap.appendChild(col);
+    });
+
+    wrap.querySelectorAll('[data-buy-perk]').forEach((btn) => {
+        btn.onclick = async () => {
+            const res = await call('cipher:gangperks:buyPerk', btn.dataset.buyPerk);
+            if (res.ok) flash('Perk purchased', 'success'); else flash(res.error || 'Failed', 'error');
+            await renderGangPerks();
+        };
+    });
+}
 
 // ── tabs ── (scoped to the enclosing .view so two apps' tabs never collide)
 el('.tab').forEach((tab) => {

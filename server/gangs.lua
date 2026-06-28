@@ -38,7 +38,8 @@ local function loadGang(id)
 
     local members = {}
     for _, m in ipairs(MySQL.query.await('SELECT * FROM cipher_gang_members WHERE gang_id = ?', { id }) or {}) do
-        members[m.citizenid] = { citizenid = m.citizenid, name = m.name, grade = m.grade, rep = m.rep or 0, dues_paid_at = m.dues_paid_at or 0 }
+        members[m.citizenid] = { citizenid = m.citizenid, name = m.name, grade = m.grade, rep = m.rep or 0,
+            dues_paid_at = m.dues_paid_at or 0, last_seen = m.last_seen or 0 }
     end
 
     row.ranks = ranks
@@ -153,7 +154,8 @@ function Gangs.Invite(src, targetSrc)
 
     local count = 0
     for _ in pairs(gang.members) do count = count + 1 end
-    if count >= Config.MaxMembers then return false, 'gang is full' end
+    local mods = GangPerks.ModifiersFor(gang.id)
+    if count >= Config.MaxMembers + mods.maxMembersBonus then return false, 'gang is full' end
 
     local targetCid = Framework.GetCitizenId(targetSrc)
     if not targetCid then return false, 'target offline' end
@@ -238,6 +240,15 @@ function Gangs.Snapshot(src)
     if not gang then return nil end
 
     local cid = Framework.GetCitizenId(src)
+
+    -- Opening the tablet counts as activity — last_seen drives the
+    -- roster's inactivity flag.
+    if cid and gang.members[cid] then
+        local nowMs = now()
+        gang.members[cid].last_seen = nowMs
+        MySQL.update('UPDATE cipher_gang_members SET last_seen = ? WHERE citizenid = ?', { nowMs, cid })
+    end
+
     local online = onlineCitizenIds()
     local members = {}
     for _, m in pairs(gang.members) do
@@ -246,6 +257,7 @@ function Gangs.Snapshot(src)
             name = m.name,
             grade = m.grade,
             rep = m.rep or 0,
+            lastSeen = m.last_seen or 0,
             rank = gang.ranks[m.grade] and gang.ranks[m.grade].name or '?',
             isOwner = gang.owner == m.citizenid,
             online = online[m.citizenid] or false,
@@ -263,16 +275,27 @@ function Gangs.Snapshot(src)
     local tierMin, nextTierMin = 0, nil
     if Notoriety then tierMin, nextTierMin = Notoriety.Progress(gang.notoriety) end
 
+    local gangLevel, nextGangLevel
+    if Notoriety then
+        gangLevel = Notoriety.GangLevel(gang.notoriety)
+        nextGangLevel = Notoriety.NextGangLevel(gangLevel.level)
+    end
+
     return {
         id = gang.id,
         name = gang.name,
         label = gang.label,
         bank = gang.bank,
-        dues = gang.dues_amount,
         notoriety = gang.notoriety,
         tier = Notoriety and Notoriety.Tier(gang.notoriety) or 'Unknown',
         tierMin = tierMin,
         nextTierMin = nextTierMin,
+        gangLevel = gangLevel and gangLevel.level or 1,
+        gangLevelTitle = gangLevel and gangLevel.title or 'Crew',
+        gangLevelRep = gangLevel and gangLevel.repNeeded or 0,
+        nextGangLevelRep = nextGangLevel and nextGangLevel.repNeeded or nil,
+        perkPoints = gang.perk_points or 0,
+        inactivityDays = Config.GangInactivityDays,
         myGrade = gang.members[cid] and gang.members[cid].grade or 0,
         myRep = gang.members[cid] and gang.members[cid].rep or 0,
         ranks = gang.ranks,

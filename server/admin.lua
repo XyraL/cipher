@@ -28,7 +28,7 @@ end
 
 -- ── reads ───────────────────────────────────────────────────
 function Admin.ListGangs()
-    local rows = MySQL.query.await('SELECT id, name, label, owner, notoriety, bank, dues_amount FROM cipher_gangs ORDER BY label') or {}
+    local rows = MySQL.query.await('SELECT id, name, label, owner, notoriety, bank FROM cipher_gangs ORDER BY label') or {}
     for _, row in ipairs(rows) do
         row.tier = Notoriety.Tier(row.notoriety)
         row.memberCount = MySQL.scalar.await('SELECT COUNT(*) FROM cipher_gang_members WHERE gang_id = ?', { row.id }) or 0
@@ -138,15 +138,6 @@ function Admin.SetBank(gangId, amount)
     gang.bank = amount
     MySQL.update('UPDATE cipher_gangs SET bank = ? WHERE id = ?', { amount, gangId })
     Gangs.Log(gangId, ('Bank set to $%d by an admin'):format(amount))
-    return true
-end
-
-function Admin.SetDues(gangId, amount)
-    local gang = Gangs.Get(gangId)
-    if not gang then return false, 'unknown gang' end
-    amount = math.max(0, math.floor(tonumber(amount) or 0))
-    gang.dues_amount = amount
-    MySQL.update('UPDATE cipher_gangs SET dues_amount = ? WHERE id = ?', { amount, gangId })
     return true
 end
 
@@ -298,12 +289,6 @@ end))
 lib.callback.register('cipher:admin:setBank', guarded(function(src, gangId, amount)
     local ok, err = Admin.SetBank(tonumber(gangId), amount)
     if ok then logAdmin(src, 'Gang bank set', ('Gang #%d → $%d'):format(gangId, tonumber(amount) or 0), Discord.Color.warn) end
-    return { ok = ok, error = err }
-end))
-
-lib.callback.register('cipher:admin:setDues', guarded(function(src, gangId, amount)
-    local ok, err = Admin.SetDues(tonumber(gangId), amount)
-    if ok then logAdmin(src, 'Gang dues set', ('Gang #%d → $%d'):format(gangId, tonumber(amount) or 0), Discord.Color.info) end
     return { ok = ok, error = err }
 end))
 

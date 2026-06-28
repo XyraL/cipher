@@ -139,6 +139,7 @@
                                 <button class="tab" data-tab="tasks">Tasks</button>
                                 <button class="tab" data-tab="unlocks">Unlocks</button>
                                 <button class="tab" data-tab="bank">Treasury</button>
+                                <button class="tab" data-tab="perks">Perks</button>
                                 <button class="tab" data-tab="activity">Activity</button>
                             </div>
                         </div>
@@ -149,6 +150,10 @@
                         <div class="overview-hero">
                             <div class="overview-name" id="overviewName">—</div>
                             <span id="overviewTier" class="tier-chip">—</span>
+                        </div>
+                        <div class="gang-level-row">
+                            <span id="overviewLevelBadge" class="gang-level-badge">LV 1</span>
+                            <span id="overviewLevelTitle" class="muted">Crew</span>
                         </div>
                         <div class="overview-progress">
                             <div class="overview-progress-track">
@@ -196,6 +201,13 @@
                             </div>
                         </div>
                         <div class="muted">Your rep: <span id="myRep">0</span></div>
+
+                        <div class="row-between" style="margin-top:14px;">
+                            <h2 style="margin:0;">Top contributors</h2>
+                        </div>
+                        <div id="topContributors" class="member-list contributor-list"></div>
+
+                        <h2 style="margin-top:18px;">All members</h2>
                         <div id="memberList" class="member-list"></div>
                     </div>
 
@@ -222,6 +234,11 @@
                     <!-- TERRITORY (signature element) -->
                     <div class="tabview" data-tabview="territory">
                         <h2>Territory control</h2>
+                        <div class="territory-map-wrap">
+                            <svg id="territoryMap" class="territory-map" viewBox="0 0 600 600" preserveAspectRatio="xMidYMid meet"></svg>
+                            <div class="map-compass">N<span class="map-compass-arrow">▲</span></div>
+                        </div>
+                        <div id="territoryDetail" class="member territory-detail hidden"></div>
                         <div id="turfGrid" class="turf-grid"></div>
                     </div>
 
@@ -231,10 +248,13 @@
                         <div id="unlockList" class="member-list"></div>
                     </div>
 
-                    <!-- TREASURY -->
+                    <!-- TREASURY (bank-statement feel) -->
                     <div class="tabview" data-tabview="bank">
-                        <div class="treasury-head">
-                            <span class="muted">Crew treasury</span>
+                        <div class="bankcard">
+                            <div class="bankcard-top">
+                                <span class="muted">CREW TREASURY</span>
+                                <span class="bankcard-chip">●●●● CIPHER</span>
+                            </div>
                             <div id="bankBalance" class="bank-balance">$0</div>
                             <div class="treasury-rep">
                                 <span id="treasuryTier" class="tier-chip">—</span>
@@ -243,17 +263,25 @@
                         </div>
                         <div class="treasury-actions">
                             <input id="bankAmount" type="number" placeholder="amount" />
-                            <button id="depositBtn" class="btn btn-ghost">Deposit</button>
+                            <button id="depositBtn" class="btn btn-accent">Deposit</button>
                             <button id="withdrawBtn" class="btn btn-ghost">Withdraw</button>
                         </div>
-                        <div class="dues-row">
-                            <span class="muted">Weekly dues / member</span>
-                            <div class="dues-set">
-                                <input id="duesAmount" type="number" placeholder="0" />
-                                <button id="setDuesBtn" class="btn btn-ghost">Set</button>
-                            </div>
+                        <p class="muted">No forced dues — deposit whenever you want. Anyone can put money in; withdrawing needs the bank permission.</p>
+
+                        <h2 style="margin-top:18px;">Transaction ledger</h2>
+                        <div id="bankLedger" class="ledger-list"></div>
+
+                        <p class="muted" style="margin-top:14px;">The vault is a physical container — place it from the Unlocks tab, then open it in person.</p>
+                    </div>
+
+                    <!-- GANG PERKS (upgrade tree) -->
+                    <div class="tabview" data-tabview="perks">
+                        <div class="row-between">
+                            <h2>Gang Perks</h2>
+                            <span class="muted">Points: <span id="gangPerkPoints" class="handle-chip">0</span></span>
                         </div>
-                        <p class="muted">The vault is a physical container — place it from the Unlocks tab, then open it in person.</p>
+                        <p class="muted">Boss-only. Buy down each branch in order — permanent, gang-wide upgrades earned by leveling up.</p>
+                        <div id="perkTree" class="perk-tree"></div>
                     </div>
 
                     <!-- ACTIVITY -->

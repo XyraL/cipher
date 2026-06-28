@@ -121,8 +121,6 @@
                     <button data-act="notoriety" data-id="${g.id}">Apply</button>
                     <input class="a-bank" type="number" placeholder="set bank $" value="${g.bank}" />
                     <button data-act="bank" data-id="${g.id}">Set</button>
-                    <input class="a-dues" type="number" placeholder="set dues $" value="${g.dues_amount}" />
-                    <button data-act="dues" data-id="${g.id}">Set</button>
                 </div>
                 <div class="admin-members" data-members="${g.id}"></div>
                 <button class="btn btn-ghost" data-act="toggleMembers" data-id="${g.id}">Members / rep</button>`;
@@ -153,8 +151,6 @@
                     await callChecked('Notoriety adjust', 'cipher:admin:adjustNotoriety', id, amt);
                 } else if (act === 'bank') {
                     await callChecked('Bank set', 'cipher:admin:setBank', id, Number(card.querySelector('.a-bank').value) || 0);
-                } else if (act === 'dues') {
-                    await callChecked('Dues set', 'cipher:admin:setDues', id, Number(card.querySelector('.a-dues').value) || 0);
                 } else if (act === 'toggleMembers') {
                     await renderMembers(id, card.querySelector(`[data-members="${id}"]`));
                     return;
@@ -234,8 +230,6 @@
                 <div class="admin-form">
                     <input class="terr-label" placeholder="rename label" value="${escapeHtml(t.label)}" />
                     <button data-label-zone="${t.zone}">Rename</button>
-                    <input class="terr-income" type="number" placeholder="income/cycle" value="${t.income || 0}" />
-                    <button data-income-zone="${t.zone}">Set income</button>
                 </div>`;
             list.appendChild(row);
         });
@@ -257,14 +251,6 @@
             btn.onclick = async () => {
                 const card = btn.closest('.admin-gang-card');
                 await callChecked('Zone renamed', 'cipher:admin:updateZone', btn.dataset.labelZone, { label: card.querySelector('.terr-label').value });
-                await refresh();
-            };
-        });
-        list.querySelectorAll('[data-income-zone]').forEach((btn) => {
-            btn.onclick = async () => {
-                const card = btn.closest('.admin-gang-card');
-                const income = Number(card.querySelector('.terr-income').value) || 0;
-                await callChecked('Income set', 'cipher:admin:updateZone', btn.dataset.incomeZone, { income });
                 await refresh();
             };
         });

@@ -52,7 +52,6 @@ local allowed = {
     ['cipher:setGrade']      = true,
     ['cipher:bankDeposit']   = true,
     ['cipher:bankWithdraw']  = true,
-    ['cipher:setDues']       = true,
     ['cipher:tasks:getAvailable'] = true,
     ['cipher:tasks:accept']       = true,
     ['cipher:tasks:cancel']       = true,
@@ -81,6 +80,9 @@ local allowed = {
     ['cipher:boosting:inviteCoop']           = true,
     ['cipher:boosting:cancelCrew']           = true,
     ['cipher:boosting:acceptCoop']           = true,
+    ['cipher:gangperks:getTree']             = true,
+    ['cipher:gangperks:buyPerk']             = true,
+    ['cipher:bankGetLedger']                 = true,
 }
 
 -- Live chat pushes (not request/response, so they bypass the relay above

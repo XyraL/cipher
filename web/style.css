@@ -401,8 +401,21 @@ input::placeholder { color: #565d68; }
 .turf.mine .turf-status { color: var(--signal); border-color: var(--signal); }
 
 /* ── Treasury ── */
-.treasury-head { text-align: center; padding: 20px 0 24px; }
-.treasury-head .muted { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+/* ── Treasury: bank-statement feel ── */
+.bankcard {
+    background: linear-gradient(135deg, var(--panel), var(--raised));
+    border: 1px solid var(--hairline); border-radius: 16px;
+    padding: 22px 24px; text-align: center; margin-bottom: 18px;
+    position: relative; overflow: hidden;
+}
+.bankcard::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.012) 3px 4px);
+    pointer-events: none;
+}
+.bankcard-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.bankcard-top .muted { font-size: 11px; letter-spacing: .1em; }
+.bankcard-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .08em; }
 .bank-balance {
     font-family: var(--display); font-weight: 700; font-size: 44px; color: var(--accent); margin-top: 6px;
     text-shadow: 0 0 24px rgba(245,165,36,.35);
@@ -410,16 +423,64 @@ input::placeholder { color: #565d68; }
 .treasury-rep { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
 .treasury-rep .tier-chip { font-size: 11px; }
 .treasury-rep .muted { font-family: var(--mono); font-size: 12px; }
-.treasury-actions { display: flex; gap: 8px; margin-bottom: 22px; }
-.treasury-actions input { flex: 1; }
-.dues-row {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px; background: var(--panel); border: 1px solid var(--hairline);
-    border-radius: 10px; margin-bottom: 18px;
-}
-.dues-set { display: flex; gap: 8px; }
-.dues-set input { width: 110px; }
+.treasury-actions { display: flex; gap: 8px; margin-bottom: 14px; }
+.treasury-actions input { flex: 1; min-width: 0; }
+.treasury-actions .btn { flex: 0 0 auto; width: auto; padding: 0 22px; }
 .vault-btn { max-width: 280px; margin: 0 auto; display: block; }
+
+.ledger-list { display: flex; flex-direction: column; gap: 6px; }
+.ledger-row {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 9px;
+    padding: 10px 14px;
+}
+.ledger-icon {
+    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 13px; font-weight: 700; flex-shrink: 0;
+}
+.ledger-row.is-deposit .ledger-icon { background: rgba(45,212,191,.15); color: var(--signal); }
+.ledger-row.is-withdraw .ledger-icon { background: rgba(229,72,77,.15); color: var(--danger); }
+.ledger-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ledger-name { font-size: 13px; font-weight: 600; }
+.ledger-time { font-size: 10px; font-family: var(--mono); }
+.ledger-amount { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+.ledger-row.is-deposit .ledger-amount { color: var(--signal); }
+.ledger-row.is-withdraw .ledger-amount { color: var(--danger); }
+
+/* ── Gang perk tree ── */
+.perk-tree { display: flex; gap: 22px; overflow-x: auto; padding-bottom: 8px; }
+.perk-branch { flex: 1; min-width: 220px; }
+.perk-branch-title {
+    font-family: var(--display); font-weight: 600; font-size: 13px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--accent); text-align: center; margin-bottom: 14px;
+}
+.perk-chain { display: flex; flex-direction: column; align-items: center; }
+.perk-line { width: 2px; height: 18px; background: var(--hairline); }
+.perk-line.is-active { background: var(--accent); box-shadow: 0 0 6px rgba(245,165,36,.5); }
+.perk-node {
+    width: 100%; display: flex; gap: 12px; align-items: flex-start;
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px;
+    padding: 12px; transition: .15s;
+}
+.perk-node.is-owned { border-color: var(--signal); box-shadow: 0 0 14px rgba(45,212,191,.15); }
+.perk-node.is-locked { opacity: .45; }
+.perk-node.is-affordable { border-color: var(--accent-dim); }
+.perk-node-icon {
+    width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+    display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 13px;
+    background: var(--raised); border: 1px solid var(--hairline); color: var(--muted);
+}
+.perk-node.is-owned .perk-node-icon { background: var(--signal); color: var(--bg); border-color: var(--signal); }
+.perk-node.is-affordable .perk-node-icon { color: var(--accent); border-color: var(--accent); }
+.perk-node-body { flex: 1; min-width: 0; }
+.perk-node-label { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.perk-node-desc { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.perk-buy-btn {
+    font-family: var(--display); font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; padding: 6px 12px; border-radius: 7px; cursor: pointer;
+    background: var(--accent); color: var(--bg); border: 1px solid var(--accent);
+}
+.perk-buy-btn:disabled { background: var(--raised); color: var(--muted); border-color: var(--hairline); cursor: not-allowed; }
 
 /* ── Main overview ── */
 .overview-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
@@ -447,6 +508,62 @@ input::placeholder { color: #565d68; }
     box-shadow: 0 0 10px rgba(245,165,36,.4);
     transition: width .4s ease;
 }
+
+/* ── Gang level badge ── */
+.gang-level-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.gang-level-badge {
+    font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .06em;
+    color: var(--bg); background: var(--accent); padding: 3px 10px; border-radius: 999px;
+    box-shadow: 0 0 12px rgba(245,165,36,.4);
+}
+
+/* ── Roster: last-seen + inactive flag ── */
+.member-lastseen { font-size: 11px; white-space: nowrap; }
+.member.is-inactive { opacity: .6; border-style: dashed; }
+.member.is-inactive .member-name::after { content: ' (inactive)'; color: var(--danger); font-size: 10px; font-weight: 400; }
+
+/* ── Top contributors ── */
+.contributor-list { margin-bottom: 4px; }
+.contributor-row { gap: 12px; }
+.contributor-rank {
+    font-family: var(--display); font-weight: 700; font-size: 13px; color: var(--accent);
+    width: 26px; text-align: center;
+}
+
+/* ── Territory map ── */
+.territory-map-wrap {
+    background: var(--panel); border: 1px solid var(--hairline); border-radius: 12px;
+    margin-bottom: 14px; overflow: hidden; position: relative;
+}
+.territory-map {
+    width: 100%; height: 320px; display: block;
+    background: #0d1f2e; /* ocean base */
+    background-image:
+        linear-gradient(rgba(245,165,36,.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245,165,36,.05) 1px, transparent 1px);
+    background-size: 30px 30px;
+}
+.map-land { fill: var(--panel); stroke: var(--hairline); stroke-width: 1.5; }
+.map-roads path { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 4; opacity: .35; }
+.map-zone circle { transition: r .15s ease; }
+.map-zone:hover circle:first-child { r: 16; }
+.map-zone.is-mine circle:last-child { filter: drop-shadow(0 0 4px var(--signal)); }
+.territory-detail { margin-bottom: 14px; }
+
+.map-district-label {
+    font-family: var(--mono); font-size: 9px; letter-spacing: .12em;
+    fill: var(--muted); opacity: .5; text-anchor: middle; pointer-events: none;
+}
+.map-compass {
+    position: absolute; top: 12px; right: 14px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent);
+    text-shadow: 0 0 6px rgba(245,165,36,.5); pointer-events: none;
+}
+.map-compass-arrow { font-size: 13px; }
+.map-radar-sweep { transform-origin: 300px 300px; animation: radar-spin 6s linear infinite; opacity: .6; }
+@keyframes radar-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.member-rank.owned { color: var(--signal); font-weight: 600; }
 .overview-progress-label { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
 
 /* ── Car boosting ── */
