@@ -387,6 +387,30 @@ local function spawnCourierVan(vanSpawn, model, isLeader)
     lib.callback.await('cipher:tasks:registerVan', false, netId)
 end
 
+-- Blip starts on the van itself (go find it) and swaps to the dropoff
+-- the moment you're actually driving it — without this it always pointed
+-- straight at the dropoff, which looked like the job assumed you'd
+-- already picked the van up.
+local function startCourierRouteSwap(van, dropoff)
+    if not van or not DoesEntityExist(van) then return end
+    CreateThread(function()
+        while courierVan == van and DoesEntityExist(van) do
+            Wait(750)
+            if GetPedInVehicleSeat(van, -1) == PlayerPedId() then
+                clearTaskBlip()
+                taskBlip = AddBlipForCoord(dropoff.x, dropoff.y, dropoff.z)
+                SetBlipSprite(taskBlip, 1)
+                SetBlipColour(taskBlip, 5)
+                SetBlipRoute(taskBlip, true)
+                BeginTextCommandSetBlipName('STRING')
+                AddTextComponentString('Drive to drop-off')
+                EndTextCommandSetBlipName(taskBlip)
+                break
+            end
+        end
+    end)
+end
+
 -- Ambush is purely atmospheric flavor — server already rolled the chance
 -- into ambushChance being non-zero on this job; surviving or losing the
 -- fight doesn't gate completion, same trust level as Boosting's guards.
@@ -519,6 +543,16 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
                 local res = lib.callback.await('cipher:tasks:doUnload', false)
                 if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
             end)
+
+            taskBlip = AddBlipForCoord(job.vanSpawn.x, job.vanSpawn.y, job.vanSpawn.z)
+            SetBlipSprite(taskBlip, 477)
+            SetBlipColour(taskBlip, 5)
+            SetBlipRoute(taskBlip, true)
+            BeginTextCommandSetBlipName('STRING')
+            AddTextComponentString('Get the van')
+            EndTextCommandSetBlipName(taskBlip)
+            startCourierRouteSwap(courierVan, job.dropoff)
+            return
         elseif job.stage == 'handoff' then
             clearCourierZone()
             if job.carryProp then attachCarryProp(job.carryProp) else clearCarryProp() end
