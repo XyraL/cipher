@@ -55,6 +55,8 @@ local heistZoneId = nil
 local courierVan = nil
 local courierZoneId = nil
 local courierAmbushPeds = {}
+local quartermasterPed = nil
+local ambushRolled = false
 local fallbackPrompt = nil -- { coords, label, action } when ox_target isn't handling the current step
 
 local function clearTaskBlip()
@@ -110,6 +112,10 @@ local function clearCourierZone()
     end
 end
 
+local function clearQuartermaster()
+    if quartermasterPed then DeleteEntity(quartermasterPed); quartermasterPed = nil end
+end
+
 local function clearFallbackPrompt()
     if fallbackPrompt then lib.hideTextUI(); fallbackPrompt = nil end
 end
@@ -123,7 +129,9 @@ local function clearAllTaskVisuals()
     clearHeistZone()
     clearCourierVan()
     clearCourierZone()
+    clearQuartermaster()
     clearFallbackPrompt()
+    ambushRolled = false
 end
 
 -- PlaceEntityOnGroundProperly isn't registered as a Lua global on every
@@ -350,6 +358,50 @@ local function setupCourierTarget(coords, label, radius, onArrive)
     end
 end
 
+-- The actual "grab from the back of the van" interaction — anchored to
+-- the van's boot bone, not a floating zone, so you have to be at the van
+-- specifically rather than just standing anywhere near the dropoff coords.
+local vanBackFallbackThread = false
+local function setupVanBackTarget(van, label, onArrive)
+    clearCourierZone()
+    clearFallbackPrompt()
+    if not van or not DoesEntityExist(van) then return end
+
+    local zoneOk = false
+    if hasTarget then
+        local ok = pcall(function()
+            exports.ox_target:addLocalEntity(van, {
+                { name = 'cipher_courier_boot', label = label, icon = 'fas fa-box-open',
+                  bones = { 'boot' }, distance = 2.5, onSelect = onArrive },
+            })
+        end)
+        zoneOk = ok
+    end
+    if zoneOk then return end
+
+    -- No ox_target — poll the van's current (moving) rear offset instead of
+    -- a fixed point, since the van isn't necessarily parked exactly on the
+    -- dropoff coords.
+    if vanBackFallbackThread then return end
+    vanBackFallbackThread = true
+    CreateThread(function()
+        local shown = false
+        while courierVan == van and DoesEntityExist(van) do
+            Wait(300)
+            local rear = GetOffsetFromEntityInWorldCoords(van, 0.0, -2.5, 0.0)
+            local near = #(GetEntityCoords(PlayerPedId()) - rear) <= 2.0
+            if near then
+                if not shown then lib.showTextUI('[E] ' .. label); shown = true end
+                if IsControlJustReleased(0, 38) then onArrive() end
+            elseif shown then
+                lib.hideTextUI(); shown = false
+            end
+        end
+        if shown then lib.hideTextUI() end
+        vanBackFallbackThread = false
+    end)
+end
+
 -- Spawns the courier van for the job leader only (or solo). Followers just
 -- see it physically — they don't need their own copy of the vehicle.
 local function spawnCourierVan(vanSpawn, model, isLeader)
@@ -387,62 +439,79 @@ local function spawnCourierVan(vanSpawn, model, isLeader)
     lib.callback.await('cipher:tasks:registerVan', false, netId)
 end
 
--- Blip starts on the van itself (go find it) and swaps to the dropoff
--- the moment you're actually driving it — without this it always pointed
--- straight at the dropoff, which looked like the job assumed you'd
--- already picked the van up.
-local function startCourierRouteSwap(van, dropoff)
-    if not van or not DoesEntityExist(van) then return end
-    CreateThread(function()
-        while courierVan == van and DoesEntityExist(van) do
-            Wait(750)
-            if GetPedInVehicleSeat(van, -1) == PlayerPedId() then
-                clearTaskBlip()
-                taskBlip = AddBlipForCoord(dropoff.x, dropoff.y, dropoff.z)
-                SetBlipSprite(taskBlip, 1)
-                SetBlipColour(taskBlip, 5)
-                SetBlipRoute(taskBlip, true)
-                BeginTextCommandSetBlipName('STRING')
-                AddTextComponentString('Drive to drop-off')
-                EndTextCommandSetBlipName(taskBlip)
-                break
-            end
-        end
-    end)
+-- Quartermaster ped standing at the van — talking to him is what "loads"
+-- the package and actually starts the drive. Spawned once at pickup_van
+-- and torn down the moment that stage finishes.
+local function spawnQuartermaster(coords, model, isLeader, onTalk)
+    clearQuartermaster()
+    if isLeader == false then return end
+    if not IsModelValid(model) then
+        lib.notify({ description = ('Bad quartermaster model (%s) — tell an admin to fix config.lua'):format(model), type = 'error' })
+        return
+    end
+    lib.requestModel(model)
+    local offset = GetOffsetFromCoordInWorldCoords(coords.x, coords.y, coords.z, coords.w or 0.0, 1.5, 1.5, 0.0)
+    quartermasterPed = CreatePed(4, model, offset.x, offset.y, coords.z, 0.0, true, true)
+    snapToGround(quartermasterPed)
+    SetEntityAsMissionEntity(quartermasterPed, true, true)
+    SetEntityInvincible(quartermasterPed, true)
+    SetBlockingOfNonTemporaryEvents(quartermasterPed, true)
+    FreezeEntityPosition(quartermasterPed, true)
+    TaskStartScenarioInPlace(quartermasterPed, 'WORLD_HUMAN_STAND_IMPATIENT', 0, true)
+
+    local zoneOk = false
+    if hasTarget then
+        local ok = pcall(function()
+            exports.ox_target:addLocalEntity(quartermasterPed, {
+                { name = 'cipher_courier_quartermaster', label = 'Get the Package', icon = 'fas fa-comments',
+                  onSelect = onTalk },
+            })
+        end)
+        zoneOk = ok
+    end
+    if not zoneOk then
+        fallbackPrompt = { coords = vec3(offset.x, offset.y, coords.z), label = 'Get the Package', action = onTalk }
+    end
 end
 
 -- Ambush is purely atmospheric flavor — server already rolled the chance
 -- into ambushChance being non-zero on this job; surviving or losing the
 -- fight doesn't gate completion, same trust level as Boosting's guards.
--- The heads-up notify before anything spawns is the whole point — never
--- a blind sucker-punch.
-local function maybeTriggerCourierAmbush(chance)
-    if not chance or chance <= 0 or math.random(100) > chance then return end
-    SetTimeout(math.random(8000, 18000), function()
-        if not courierVan or not DoesEntityExist(courierVan) then return end
-        lib.notify({ description = 'You notice a car tailing you...', type = 'inform', duration = 4000 })
-        SetTimeout(4000, function()
+-- Framed as "they were already waiting near the dropoff" rather than a
+-- random highway encounter: it triggers on proximity to the dropoff, with
+-- a heads-up warning the moment it fires, never a blind sucker-punch.
+local function maybeTriggerCourierAmbush(chance, dropoff)
+    if ambushRolled or not chance or chance <= 0 or math.random(100) > chance then return end
+    ambushRolled = true
+    CreateThread(function()
+        while courierVan and DoesEntityExist(courierVan) do
+            Wait(1000)
             if not courierVan or not DoesEntityExist(courierVan) then return end
-            lib.notify({ description = "They're making a move — defend yourself!", type = 'error' })
-            local ped = PlayerPedId()
-            AddRelationshipGroup('cipher_hitcontract')
-            local hostileGroup = GetHashKey('cipher_hitcontract')
-            SetRelationshipBetweenGroups(5, hostileGroup, `PLAYER`)
-            SetRelationshipBetweenGroups(5, `PLAYER`, hostileGroup)
-            for i = 1, 2 do
-                local offset = GetOffsetFromEntityInWorldCoords(ped, math.random(-8, 8) + 0.0, math.random(-8, 8) + 0.0, 0.0)
-                local model = `g_m_y_lost_01`
-                lib.requestModel(model)
-                local hPed = CreatePed(4, model, offset.x, offset.y, offset.z, 0.0, true, true)
-                SetPedRelationshipGroupHash(hPed, hostileGroup)
-                GiveWeaponToPed(hPed, GetHashKey('WEAPON_PISTOL'), 250, false, true)
-                SetPedCombatAttributes(hPed, 46, true)
-                SetPedCombatAttributes(hPed, 5, true)
-                SetPedFleeAttributes(hPed, 0, false)
-                TaskCombatPed(hPed, ped, 0, 16)
-                courierAmbushPeds[#courierAmbushPeds + 1] = hPed
+            if #(GetEntityCoords(PlayerPedId()) - dropoff) <= 60.0 then
+                lib.notify({ description = "This van's hot — they spotted the package!", type = 'error', duration = 5000 })
+                Wait(3500)
+                if not courierVan or not DoesEntityExist(courierVan) then return end
+                AddRelationshipGroup('cipher_hitcontract')
+                local hostileGroup = GetHashKey('cipher_hitcontract')
+                SetRelationshipBetweenGroups(5, hostileGroup, `PLAYER`)
+                SetRelationshipBetweenGroups(5, `PLAYER`, hostileGroup)
+                for i = 1, 2 do
+                    local offset = GetOffsetFromEntityInWorldCoords(courierVan, math.random(-6, 6) + 0.0, math.random(-6, 6) + 0.0, 0.0)
+                    local model = `g_m_y_lost_01`
+                    lib.requestModel(model)
+                    local hPed = CreatePed(4, model, offset.x, offset.y, offset.z, 0.0, true, true)
+                    snapToGround(hPed)
+                    SetPedRelationshipGroupHash(hPed, hostileGroup)
+                    GiveWeaponToPed(hPed, GetHashKey('WEAPON_PISTOL'), 250, false, true)
+                    SetPedCombatAttributes(hPed, 46, true)
+                    SetPedCombatAttributes(hPed, 5, true)
+                    SetPedFleeAttributes(hPed, 0, false)
+                    TaskCombatPed(hPed, PlayerPedId(), 0, 16)
+                    courierAmbushPeds[#courierAmbushPeds + 1] = hPed
+                end
+                return
             end
-        end)
+        end
     end)
 end
 
@@ -518,29 +587,28 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     end
 
     if job.type == 'kill' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearFallbackPrompt()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearQuartermaster(); clearFallbackPrompt()
         spawnKillTarget(job.spawn, job.pedModel, job.weapon, job.isLeader)
         return
     end
 
     if job.type == 'escort' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearFallbackPrompt()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearQuartermaster(); clearFallbackPrompt()
         spawnEscort(job.spawn, job.destination, job.pedModel, job.radius, job.isLeader)
         return
     end
 
     if job.type == 'courier' then
         clearCarryProp(); clearPickupZone(); clearKillPed(); clearEscortPed(); clearHeistZone()
-        if job.stage == 'enroute' then
-            clearCourierZone()
+
+        if job.stage == 'pickup_van' then
+            clearCourierZone(); clearDropoffPed()
             spawnCourierVan(job.vanSpawn, job.vanModel, job.isLeader)
-            -- Spawn the hand-off ped now, not at the handoff stage — it
-            -- should already be standing there when the van arrives, not
-            -- pop in the moment you unload.
+            -- Hand-off ped spawns now too, not at the handoff stage — it
+            -- should already be standing there when the van arrives.
             spawnDropoffPedOnly(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01', job.isLeader)
-            maybeTriggerCourierAmbush(job.ambushChance)
-            setupCourierTarget(job.dropoff, 'Unload Package', job.radius, function()
-                local res = lib.callback.await('cipher:tasks:doUnload', false)
+            spawnQuartermaster(job.vanSpawn, job.quartermasterModel or 'g_m_y_lost_01', job.isLeader, function()
+                local res = lib.callback.await('cipher:tasks:doPickupVan', false)
                 if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
             end)
 
@@ -551,14 +619,35 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
             BeginTextCommandSetBlipName('STRING')
             AddTextComponentString('Get the van')
             EndTextCommandSetBlipName(taskBlip)
-            startCourierRouteSwap(courierVan, job.dropoff)
+            return
+        elseif job.stage == 'enroute' then
+            clearQuartermaster(); clearCourierZone()
+            maybeTriggerCourierAmbush(job.ambushChance, job.dropoff)
+            setupVanBackTarget(courierVan, 'Open the Boot', function()
+                if lib.progressBar({ duration = 2200, label = 'Grabbing the package...', useWhileDead = false,
+                                      canCancel = true, anim = { dict = 'pickup_object', clip = 'pickup_low' } }) then
+                    local res = lib.callback.await('cipher:tasks:doUnload', false)
+                    if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+                end
+            end)
+
+            taskBlip = AddBlipForCoord(job.dropoff.x, job.dropoff.y, job.dropoff.z)
+            SetBlipSprite(taskBlip, 1)
+            SetBlipColour(taskBlip, 5)
+            SetBlipRoute(taskBlip, true)
+            BeginTextCommandSetBlipName('STRING')
+            AddTextComponentString('Drive to drop-off')
+            EndTextCommandSetBlipName(taskBlip)
             return
         elseif job.stage == 'handoff' then
             clearCourierZone()
             if job.carryProp then attachCarryProp(job.carryProp) else clearCarryProp() end
             setupDropoffTarget(job.dropoff, job.dropoffPedModel or 'g_m_y_lost_01', job.isLeader, 'Hand Off Package', function()
-                local res = lib.callback.await('cipher:tasks:doCourierHandoff', false)
-                if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+                if lib.progressBar({ duration = 1800, label = 'Handing off the package...', useWhileDead = false,
+                                      canCancel = true, anim = { dict = 'mp_common', clip = 'givetake1_a' } }) then
+                    local res = lib.callback.await('cipher:tasks:doCourierHandoff', false)
+                    if res and not res.ok then lib.notify({ description = res.error or 'Failed', type = 'error' }) end
+                end
             end)
         else -- return
             clearDropoffPed(); clearCarryProp()
@@ -570,17 +659,17 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
 
         local coords = job.stage == 'return' and job.vanSpawn or job.dropoff
         taskBlip = AddBlipForCoord(coords.x, coords.y, coords.z)
-        SetBlipSprite(taskBlip, job.stage == 'return' and 477 or (job.stage == 'handoff' and 358 or 1))
-        SetBlipColour(taskBlip, job.stage == 'return' and 5 or (job.stage == 'handoff' and 2 or 5))
+        SetBlipSprite(taskBlip, job.stage == 'return' and 477 or 358)
+        SetBlipColour(taskBlip, job.stage == 'return' and 5 or 2)
         SetBlipRoute(taskBlip, true)
         BeginTextCommandSetBlipName('STRING')
-        AddTextComponentString(job.stage == 'return' and 'Return the van' or (job.stage == 'handoff' and 'Hand off' or 'Drive to drop-off'))
+        AddTextComponentString(job.stage == 'return' and 'Return the van' or 'Hand off')
         EndTextCommandSetBlipName(taskBlip)
         return
     end
 
     if job.type == 'heist' then
-        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearEscortPed(); clearCourierVan(); clearCourierZone()
+        clearCarryProp(); clearPickupZone(); clearDropoffPed(); clearKillPed(); clearEscortPed(); clearCourierVan(); clearCourierZone(); clearQuartermaster()
         local label, action
         if job.stage == 'infiltrate' then
             label, action = 'Infiltrate', function() doInfiltrate(job.holdSeconds) end
@@ -602,7 +691,7 @@ RegisterNetEvent('cipher:client:taskUpdate', function(job)
     end
 
     -- delivery
-    clearKillPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone()
+    clearKillPed(); clearEscortPed(); clearHeistZone(); clearCourierVan(); clearCourierZone(); clearQuartermaster()
 
     if job.stage == 'pickup' then
         clearCarryProp()

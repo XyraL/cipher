@@ -287,7 +287,11 @@ local function stagePayloadFor(def, stage, job)
     elseif def.type == 'courier' then
         local vanSpawn = job and job.vanSpawn
         local dropoff = job and job.dropoff
-        if stage == 'handoff' then
+        if stage == 'pickup_van' then
+            return { type = 'courier', stage = 'pickup_van', vanSpawn = vanSpawn, vanModel = def.vanModel,
+                     dropoff = dropoff, dropoffPedModel = def.dropoffPedModel, radius = def.radius,
+                     quartermasterModel = def.quartermasterModel }
+        elseif stage == 'handoff' then
             return { type = 'courier', stage = 'handoff', dropoff = dropoff, carryProp = def.carryProp, dropoffPedModel = def.dropoffPedModel }
         elseif stage == 'return' then
             return { type = 'courier', stage = 'return', vanSpawn = vanSpawn, radius = def.radius }
@@ -330,11 +334,11 @@ function Tasks.Accept(src, taskId)
         active[src] = { id = taskId, stage = 'infiltrate', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'infiltrate'))
     elseif def.type == 'courier' then
-        local job = { id = taskId, stage = 'enroute', startedAt = os.time() * 1000,
+        local job = { id = taskId, stage = 'pickup_van', startedAt = os.time() * 1000,
                       vanSpawn = def.vanSpawns[math.random(#def.vanSpawns)],
                       dropoff = def.dropoffs[math.random(#def.dropoffs)] }
         active[src] = job
-        TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'enroute', job))
+        TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def, 'pickup_van', job))
     else
         active[src] = { id = taskId, stage = 'pickup', startedAt = os.time() * 1000 }
         TriggerClientEvent('cipher:client:taskUpdate', src, stagePayloadFor(def))
@@ -390,12 +394,12 @@ function Tasks.AcceptCoop(src, taskId)
             TriggerClientEvent('cipher:client:taskUpdate', m, stagePayloadFor(def, 'infiltrate'))
         end
     elseif def.type == 'courier' then
-        job.stage = 'enroute'
+        job.stage = 'pickup_van'
         job.vanSpawn = def.vanSpawns[math.random(#def.vanSpawns)]
         job.dropoff = def.dropoffs[math.random(#def.dropoffs)]
         for _, m in ipairs(c.members) do
             active[m] = job
-            local payload = stagePayloadFor(def, 'enroute', job)
+            local payload = stagePayloadFor(def, 'pickup_van', job)
             payload.isLeader = (m == src)
             TriggerClientEvent('cipher:client:taskUpdate', m, payload)
         end
@@ -613,9 +617,39 @@ end
 -- leader's registration call should be trusted to set vanNetId.
 function Tasks.RegisterVan(src, netId)
     local job = active[src]
-    if not job or job.stage ~= 'enroute' then return false, 'no active courier job' end
+    if not job or job.stage ~= 'pickup_van' then return false, 'no active courier job' end
     if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
     job.vanNetId = netId
+    return true
+end
+
+-- Talking to the quartermaster at the van is what "loads" the package.
+function Tasks.DoPickupVan(src)
+    local job = active[src]
+    if not job or job.stage ~= 'pickup_van' then return false, 'no active courier job' end
+    if job.coop and src ~= job.leaderSrc then return false, 'only the crew leader can do this' end
+    local def = byId[job.id]
+    if not def then return false, 'unknown task' end
+
+    local ped = GetPlayerPed(src)
+    if ped == 0 or dist(GetEntityCoords(ped), job.vanSpawn) > (def.radius or 6.0) then
+        return false, 'too far from the van'
+    end
+
+    job.stage = 'enroute'
+    local payload = stagePayloadFor(def, 'enroute', job)
+    payload.id = job.id
+    if job.coop then
+        for _, m in ipairs(job.crew) do
+            local p2 = {}
+            for k, v in pairs(payload) do p2[k] = v end
+            p2.isLeader = (m == src)
+            TriggerClientEvent('cipher:client:taskUpdate', m, p2)
+        end
+    else
+        TriggerClientEvent('cipher:client:taskUpdate', src, payload)
+    end
+    Framework.Notify(src, "Package loaded — get it there.", 'success')
     return true
 end
 
@@ -829,6 +863,11 @@ end)
 
 lib.callback.register('cipher:tasks:registerVan', function(src, netId)
     local ok, err = Tasks.RegisterVan(src, netId)
+    return { ok = ok, error = err }
+end)
+
+lib.callback.register('cipher:tasks:doPickupVan', function(src)
+    local ok, err = Tasks.DoPickupVan(src)
     return { ok = ok, error = err }
 end)
 

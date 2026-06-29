@@ -64,6 +64,7 @@ local allowed = {
     ['cipher:tasks:cancelCrew']       = true,
     ['cipher:tasks:acceptCoop']       = true,
     ['cipher:tasks:registerVan']      = true,
+    ['cipher:tasks:doPickupVan']      = true,
     ['cipher:tasks:doUnload']         = true,
     ['cipher:tasks:doCourierHandoff'] = true,
     ['cipher:tasks:doReturnVan']      = true,

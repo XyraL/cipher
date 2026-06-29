@@ -323,20 +323,25 @@ Config.TasksCoop = {
 -- type = 'heist': three sequential target points — infiltrate (hold the
 --   interaction for holdSeconds), grab (instant), escape (reach the point
 --   within the task's timeLimitSeconds, counted from when you started).
--- type = 'courier': a full van-delivery loop. A van spawns at `vanSpawn`
---   with the package already "in the back" (just flavor — there's no
---   physical item, the carryProp shows once you unload). Drive it to
---   `dropoffs`, unload (target prompt, validated by BOTH your position and
---   the van's actual position — the van isn't just along for the ride),
---   hand the package to the ped there, then drive the van all the way
---   back to its spawn point to actually finish the job — delivering the
---   package alone doesn't complete it, the van has to come home too.
+-- type = 'courier': a full van-delivery loop, five stages:
+--   1. pickup_van — a van spawns at `vanSpawn` with `quartermasterModel`
+--      standing next to it; talk to him to actually load the package in.
+--   2. enroute — drive the van to `dropoffs`.
+--   3. unload — open the van's boot (target attached to the vehicle
+--      itself, not a floating zone) to take the package out, with an
+--      animation; this is also validated by the van's actual position,
+--      not just yours, so parking nearby and walking off doesn't count.
+--   4. handoff — give it to the ped waiting at the dropoff (animated).
+--   5. return — drive the van all the way back to its spawn point to
+--      actually finish the job — delivering the package alone doesn't
+--      complete it, the van has to come home too.
 --   `vanSpawns` and `dropoffs` are each lists — one of each is picked at
 --   random per job, same pattern as Boosting's vehicle `spawns` lists, so
 --   it's not the same two spots every single time.
---   `ambushChance` (0-100) is rolled once per job during the drive out —
---   on a hit you get a heads-up notification a few seconds before hostiles
---   show up near you, so it never feels like a blindside.
+--   `ambushChance` (0-100) is rolled once per job — on a hit, hostiles are
+--   waiting near the dropoff itself (not a random highway encounter), and
+--   you get a "this van's hot" warning the moment you're close enough to
+--   trigger them, never a blindside.
 -- (Car boosting is NOT a task type — it's a fully separate system with its
 -- own levels/XP/leaderboard, independent of gangs. See Config.Boosting.)
 -- ─────────────────────────────────────────────────────────────
@@ -370,8 +375,10 @@ Config.Tasks = {
         timeLimitSeconds = 600,   -- fail if not finished (van home included) within this window
         ambushChance = 25,
         carryProp = 'prop_box_ammo04a', -- shown while carrying the unloaded package to the ped
-        -- g_m_y_lost_01 confirmed valid via /testmodel — the ped you hand the package to.
+        -- g_m_y_lost_01 confirmed valid via /testmodel — the ped you hand the package to,
+        -- and the quartermaster who loads the van in the first place.
         dropoffPedModel = 'g_m_y_lost_01',
+        quartermasterModel = 'g_m_y_lost_01',
     },
     {
         id = 'briefcase_run',
@@ -399,9 +406,11 @@ Config.Tasks = {
         cooldownMinutes = 30,
         timeLimitSeconds = 600,
         ambushChance = 40,
-        -- prop_box_ammo04a confirmed valid via /testmodel.
-        carryProp = 'prop_box_ammo04a',
+        -- Verify with /testmodel before relying on this — distinct from
+        -- Package Run's box so the two jobs don't feel identical.
+        carryProp = 'prop_attache_case_01',
         dropoffPedModel = 'g_m_y_lost_01',
+        quartermasterModel = 'g_m_y_lost_01',
     },
     {
         id = 'hit_contract',
