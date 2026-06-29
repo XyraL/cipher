@@ -126,6 +126,20 @@ local function clearAllTaskVisuals()
     clearFallbackPrompt()
 end
 
+-- PlaceEntityOnGroundProperly isn't registered as a Lua global on every
+-- build — falls back to a manual GetGroundZFor_3dCoord snap so a missing
+-- native can't crash the spawn.
+local function snapToGround(entity)
+    if not entity or entity == 0 then return end
+    local ok = pcall(function() PlaceEntityOnGroundProperly(entity, true) end)
+    if ok then return end
+    local coords = GetEntityCoords(entity)
+    local found, groundZ = GetGroundZFor_3dCoord(coords.x, coords.y, coords.z + 5.0, false)
+    if found then
+        SetEntityCoords(entity, coords.x, coords.y, groundZ + 0.02, false, false, false, true)
+    end
+end
+
 -- Single proximity+[E] loop backing whichever interaction ox_target isn't
 -- covering right now (no ox_target installed, or the zone/target call failed).
 CreateThread(function()
@@ -170,7 +184,7 @@ local function spawnKillTarget(spawn, model, weapon, isLeader)
     end
     lib.requestModel(model)
     killPed = CreatePed(4, model, spawn.x, spawn.y, spawn.z, 0.0, true, true)
-    PlaceEntityOnGroundProperly(killPed)
+    snapToGround(killPed)
 
     AddRelationshipGroup('cipher_hitcontract')
     local hostileGroup = GetHashKey('cipher_hitcontract')
@@ -255,7 +269,7 @@ local function spawnEscort(spawn, destination, model, radius, isLeader)
     end
     lib.requestModel(model)
     escortPed = CreatePed(4, model, spawn.x, spawn.y, spawn.z, 0.0, true, true)
-    PlaceEntityOnGroundProperly(escortPed)
+    snapToGround(escortPed)
     SetBlockingOfNonTemporaryEvents(escortPed, true)
     SetPedCanRagdoll(escortPed, true)
 
@@ -421,7 +435,7 @@ local function spawnDropoffPedOnly(coords, model, isLeader)
     end
     lib.requestModel(model)
     dropoffPed = CreatePed(4, model, coords.x, coords.y, coords.z, coords.w or 0.0, true, true)
-    PlaceEntityOnGroundProperly(dropoffPed)
+    snapToGround(dropoffPed)
     -- Without this, OneSync can clean the ped up as "too far from any
     -- player" before whoever's driving the van actually gets there.
     SetEntityAsMissionEntity(dropoffPed, true, true)
